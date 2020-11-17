@@ -6,7 +6,7 @@ ARG USER_GROUP=1000
 RUN useradd -m -d /best_user best_user
 
 RUN apt-get update
-RUN apt-get install -y curl build-essential make
+RUN apt-get install -y curl build-essential make parted mtools
 
 RUN apt-get update
 RUN apt-get install -y lld

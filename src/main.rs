@@ -35,7 +35,7 @@ struct SystemTableHeader {
 }
 
 #[repr(C)]
-struct SystemTable {
+struct SystemTable<'a> {
     header: SystemTableHeader,
 
     firmware_vendor: u64,
@@ -45,7 +45,7 @@ struct SystemTable {
     con_in: u64,
 
     console_out_handle: u64,
-    console_out: *const SimpleTextOutputInterface,
+    console_out: &'a SimpleTextOutputInterface,
 
     standard_error_handle: u64,
     stderr: u64,
@@ -57,24 +57,84 @@ struct SystemTable {
     configuration_table: u64,
 }
 
-#[no_mangle]
-fn efi_main(image_handle: u64, system_table: *const SystemTable) -> u64 {
-    unsafe {
-        let table = &*system_table;
+struct TextWriter<'a> {
+    output: &'a SimpleTextOutputInterface,
+}
 
-        let s = "Hello World from the great bootloader";
+impl<'a> TextWriter<'a> {
+    fn new(output: &'a SimpleTextOutputInterface) -> Self {
+        Self {
+            output
+        }
+    }
+
+    fn print(&mut self, s: &str) {
         let mut arr = [0u16; 1024];
         let mut p = 0;
 
         for c in s.bytes() {
+            if c == b'\n' {
+                arr[p] = b'\r' as u16;
+                p += 1;
+
+                // TODO(patrik): Check 'p' for overflow
+
+                arr[p] = b'\n' as u16;
+                p += 1;
+
+                // TODO(patrik): Check 'p' for overflow
+
+                continue;
+            }
+
             arr[p] = c as u16;
             p += 1;
+
+            if p >= arr.len() {
+                // TODO(patrik): Flush the buffer
+            }
         }
 
-        ((*table.console_out).output_string)(&*table.console_out, arr.as_mut_ptr());
+        unsafe {
+            (self.output.output_string)(self.output, arr.as_mut_ptr());
+        }
+    }
+}
+
+impl<'a> core::fmt::Write for TextWriter<'a> {
+    fn write_str(&mut self, s: &str) -> core::fmt::Result {
+        self.print(s);
+        Ok(())
+    }
+}
+
+static mut WRITER: Option<TextWriter> = None;
+
+macro_rules! print {
+    ($($arg:tt)*) => ({
+        use core::fmt::Write;
+        unsafe {
+            match WRITER.as_mut() {
+                Some(w) => w.write_fmt(format_args!($($arg)*)).unwrap(),
+                None => {},
+            }
+        }
+    });
+}
+
+#[no_mangle]
+fn efi_main(_image_handle: u64, system_table: *const SystemTable<'static>) -> u64 {
+    let table = unsafe { &*system_table };
+
+    unsafe {
+        WRITER = Some(TextWriter::new(table.console_out));
     }
 
+    print!("Hello World from the bootloader");
+
     loop {}
+        
+    // panic!("Test");
     0
 }
 
