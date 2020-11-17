@@ -1,5 +1,3 @@
-#![feature(rustc_private)]
-
 #![no_std]
 #![no_main]
 
@@ -11,18 +9,28 @@ use core::panic::PanicInfo;
 struct SimpleTextOutputInterface {
     reset: u64,
 
-    output_string: unsafe fn(&SimpleTextOutputInterface, *const u16) -> u64,
+    output_string_fn: unsafe fn(&SimpleTextOutputInterface, *const u16) -> u64,
     test_string: u64,
     
     quary_mode: u64,
     set_mode: u64,
     set_attribute: u64,
 
-    clear_screen: u64,
+    clear_screen_fn: unsafe fn(&SimpleTextOutputInterface) -> u64,
     set_cursor_position: u64,
     enable_cursor: u64,
 
     mode: u64,
+}
+
+impl SimpleTextOutputInterface {
+    unsafe fn output_string(&self, bytes: &[u16]) {
+        (self.output_string_fn)(self, bytes.as_ptr()); 
+    }
+
+    unsafe fn clear_screen(&self) {
+        (self.clear_screen_fn)(self);
+    }
 }
 
 #[repr(C)]
@@ -77,12 +85,12 @@ impl<'a> TextWriter<'a> {
                 arr[p] = b'\r' as u16;
                 p += 1;
 
-                // TODO(patrik): Check 'p' for overflow
+                // TODO(patrik): Check 'p' for overflow and flush the buffer
 
                 arr[p] = b'\n' as u16;
                 p += 1;
 
-                // TODO(patrik): Check 'p' for overflow
+                // TODO(patrik): Check 'p' for overflow and flush the buffer
 
                 continue;
             }
@@ -96,7 +104,8 @@ impl<'a> TextWriter<'a> {
         }
 
         unsafe {
-            (self.output.output_string)(self.output, arr.as_mut_ptr());
+            // (self.output.output_string)(self.output, arr.as_mut_ptr());
+            self.output.output_string(&arr);
         }
     }
 }
@@ -122,23 +131,38 @@ macro_rules! print {
     });
 }
 
+macro_rules! println {
+    () => (print!("\n"));
+    ($($arg:tt)*) => (print!("{}\n", format_args!($($arg)*)));
+}
+
 #[no_mangle]
-fn efi_main(_image_handle: u64, system_table: *const SystemTable<'static>) -> u64 {
+fn efi_main(_image_handle: u64, 
+            system_table: *const SystemTable<'static>) 
+    -> u64 
+{
     let table = unsafe { &*system_table };
+
+    unsafe {
+        table.console_out.clear_screen();
+        // (table.console_out.clear_screen)(table.console_out);
+    }
 
     unsafe {
         WRITER = Some(TextWriter::new(table.console_out));
     }
 
-    print!("Hello World from the bootloader");
+    println!("Welcome to the potato bootloader v0.1");
+
+    // TODO(patrik): Load the kernel
 
     loop {}
         
-    // panic!("Test");
     0
 }
 
 #[panic_handler]
 fn panic(_info: &PanicInfo) -> ! {
+    print!("PANIC");
     loop {}
 }
