@@ -4,7 +4,7 @@ OVMF_BIN_DIR=third_party/ovmf_bins
 OVMF_CODE_BIN=$(OVMF_BIN_DIR)/OVMF_CODE-pure-efi.fd
 OVMF_VARS_BIN=$(OVMF_BIN_DIR)/OVMF_VARS-pure-efi.fd
 
-EFI_EXE=target/x86_64-pc-windows-gnu/$(TARGET)/rust_uefi.exe
+EFI_EXE=target/x86_64-pc-windows-gnu/$(TARGET)/potato_loader.exe
 UEFI_IMAGE=obj/uefi.img
 PART_IMAGE=obj/part.img
 
@@ -31,7 +31,7 @@ image: build
 
 	dd if=$(PART_IMAGE) of=$(UEFI_IMAGE) bs=512 count=91669 seek=2048 conv=notrunc
 
-run: image
+run: 
 	qemu-system-x86_64 -drive file=$(UEFI_IMAGE) -m 256M -cpu qemu64 -drive if=pflash,format=raw,unit=0,file="$(OVMF_CODE_BIN)",readonly=on -drive if=pflash,format=raw,unit=1,file="$(OVMF_VARS_BIN)" -net none
 
 clean:

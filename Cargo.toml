@@ -1,5 +1,5 @@
 [package]
-name = "rust_uefi"
+name = "potato_loader"
 version = "0.1.0"
 authors = ["Patrik M. Rosenström <patrik.millvik@gmail.com>"]
 edition = "2018"
