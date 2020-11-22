@@ -8,6 +8,7 @@ edition = "2018"
 
 [dependencies]
 rlibc = "1.0.0"
+bitflags = "1.2.1"
 
 [profile.dev]
 panic = "abort"
