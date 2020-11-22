@@ -50,10 +50,10 @@ struct TableHeader {
 }
 
 #[derive(Clone, Copy, Debug)]
-struct PhysicalAddress(usize);
+struct PhysicalAddress(u64);
 
 #[derive(Clone, Copy, Debug)]
-struct VirtualAddress(usize);
+struct VirtualAddress(u64);
 
 #[repr(C)]
 #[derive(Clone, Copy, Debug)]
@@ -141,6 +141,14 @@ struct BootServices {
     create_event_ex_fn: usize,
 }
 
+impl BootServices {
+    unsafe fn allocate_pool(&self, memory_type: u32, 
+                            size: usize, buffer: &mut *mut u8) 
+    {
+        (self.allocate_pool_fn)(4, size as u64, buffer);
+    }
+}
+
 #[repr(C)]
 #[derive(Clone, Copy)]
 struct SystemTable<'a> {
@@ -204,7 +212,6 @@ impl<'a> TextWriter<'a> {
         }
 
         unsafe {
-            // (self.output.output_string)(self.output, arr.as_mut_ptr());
             self.output.output_string(&arr);
         }
     }
@@ -237,18 +244,19 @@ macro_rules! println {
     ($($arg:tt)*) => (print!("{}\n", format_args!($($arg)*)));
 }
 
-
 struct EFIAllocator;
 
 unsafe impl GlobalAlloc for EFIAllocator {
     unsafe fn alloc(&self, layout: Layout) -> *mut u8 {
         let mut buffer = core::ptr::null_mut();
-        (TABLE.unwrap().boot_services.allocate_pool_fn)(4, layout.size() as u64, &mut buffer);
+        TABLE.unwrap().boot_services.allocate_pool(4, layout.size(), &mut buffer);
 
         buffer
     }
 
-    unsafe fn dealloc(&self, _ptr: *mut u8, _layout: Layout) {}
+    unsafe fn dealloc(&self, _ptr: *mut u8, _layout: Layout) {
+        // panic!("Dealloc");
+    }
 }
 
 #[global_allocator]
@@ -261,8 +269,7 @@ fn alloc_error_handler(layout: alloc::alloc::Layout) -> ! {
 
 #[no_mangle]
 fn efi_main(_image_handle: u64, 
-            system_table: *const SystemTable<'static>) 
-    -> u64 
+            system_table: *const SystemTable<'static>) -> u64 
 {
     let table = unsafe { &*system_table };
 
@@ -290,15 +297,40 @@ fn efi_main(_image_handle: u64,
         )
     };
 
-    let test = vec![123, 321, 123];
+    let size = map_size;
+    let mut buffer = vec![0u8; size as usize];
+
+    let ptr = buffer.as_mut_ptr() as *mut MemoryDescriptor;
+
+    let mut map_size = buffer.len() as u64;
+    let mut map_key = 0;
+    let mut entry_size = 0;
+    let mut entry_version = 0;
+
+    let status = unsafe {
+        (table.boot_services.get_memory_map_fn)(
+            &mut map_size,
+            ptr,
+            &mut map_key,
+            &mut entry_size,
+            &mut entry_version,
+        )
+    };
+
+    println!("Status: {}", status & !0x8000000000000000);
+
+    let len = map_size / entry_size;
 
     println!("Welcome to the potato bootloader v0.1");
-    println!("Boot Services Size: {}", core::mem::size_of::<BootServices>());
-    println!("Test: {:?}", test);
+    println!("Num entries: {}", len);
+
+    for i in 0..len {
+        // println!("Test: {:?}", *ptr.offset(i as isize));
+    }
 
     // TODO(patrik): Load the kernel
 
-    loop {}
+    0
 }
 
 #[panic_handler]
