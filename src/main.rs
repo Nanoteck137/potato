@@ -76,7 +76,7 @@ struct EFIFileHandle {
     write_fn: usize,
     get_position_fn: usize,
     set_position_fn: usize,
-    get_info_fn: unsafe fn(this: &EFIFileHandle, infomation_type: &EFIGuid, buffer_size: &mut u64, &mut *mut c_void) -> u64,
+    get_info_fn: unsafe fn(this: &EFIFileHandle, infomation_type: &EFIGuid, buffer_size: &mut u64, &mut *mut u8) -> u64,
     set_info_fn: usize,
     flush_fn: usize,
     open_ex_fn: usize,
@@ -375,13 +375,15 @@ struct EFIAllocator;
 
 unsafe impl GlobalAlloc for EFIAllocator {
     unsafe fn alloc(&self, layout: Layout) -> *mut u8 {
+        println!("[DEBUG]: Allocate {} bytes", layout.size());
         let mut buffer = core::ptr::null_mut();
         TABLE.unwrap().boot_services.allocate_pool(4, layout.size(), &mut buffer);
 
         buffer
     }
 
-    unsafe fn dealloc(&self, ptr: *mut u8, _layout: Layout) {
+    unsafe fn dealloc(&self, ptr: *mut u8, layout: Layout) {
+        println!("[DEBUG]: Deallocate {} bytes", layout.size());
         TABLE.unwrap().boot_services.free_pool(ptr);
     }
 }
@@ -394,7 +396,7 @@ fn alloc_error_handler(layout: alloc::alloc::Layout) -> ! {
     panic!("allocation error: {:?}", layout)
 }
 
-fn load_file(handle: EFIHandle, filename: &str) {
+fn load_file(handle: EFIHandle, filename: &str) -> alloc::vec::Vec<u8> {
     let table = unsafe { TABLE.unwrap() };
 
     let mut loaded_image_ptr = core::ptr::null_mut();
@@ -419,7 +421,7 @@ fn load_file(handle: EFIHandle, filename: &str) {
     println!("Status: {}", status & !0x8000000000000000);
     println!("Volume Pointer: {:#x?}", volume_ptr);
 
-    let mut buf = [0u16; 100];
+    let mut buf = [0u16; 1024];
 
     let mut index = 0;
     for c in filename.bytes() {
@@ -436,15 +438,26 @@ fn load_file(handle: EFIHandle, filename: &str) {
     let handle = unsafe { &*handle_ptr };
     println!("Status: {}", status & !0x8000000000000000);
 
-
-    let mut buffer = core::ptr::null_mut();
     let mut buffer_size = 0u64;
     let status = unsafe {
-        (handle.get_info_fn)(handle, &GET_INFO_GUID, &mut buffer_size, &mut buffer)
+        (handle.get_info_fn)(handle, &GET_INFO_GUID, &mut buffer_size, &mut core::ptr::null_mut())
     };
 
-    println!("Status: {}", status & !0x8000000000000000);
+    println!("Get Info Status: {}", status & !0x8000000000000000);
     println!("Buffer Size: {}", buffer_size);
+
+    let mut buffer = vec![0u8; buffer_size as usize];
+    let mut buffer_ptr = buffer.as_mut_ptr();
+    println!("Buffer Pointer: {:#?}", buffer_ptr);
+
+    let status = unsafe {
+        (handle.get_info_fn)(handle, &GET_INFO_GUID, &mut buffer_size, &mut buffer_ptr)
+    };
+
+    println!("Buffer: {:?}", buffer);
+    println!("Get Info Status: {}", status & !0x8000000000000000);
+
+    buffer
 }
 
 #[no_mangle]
@@ -461,6 +474,8 @@ fn efi_main(image_handle: EFIHandle,
         WRITER = Some(TextWriter::new(table.console_out));
         TABLE = Some(*table);
     }
+
+    println!("Welcome to the potato bootloader v0.1");
 
     let mut map_size = 0;
     let mut map_key = 0;
@@ -500,12 +515,7 @@ fn efi_main(image_handle: EFIHandle,
     println!("Status: {}", status & !0x8000000000000000);
 
     let num_entries = map_size / entry_size;
-    println!("Entry Size: {}", entry_size);
-    println!("Rust Entry Size: {}", core::mem::size_of::<MemoryDescriptor>());
 
-    println!("Enum Size: {}", core::mem::size_of::<EFIMemoryType>());
-
-    println!("Welcome to the potato bootloader v0.1");
     println!("Num entries: {}", num_entries);
 
     for i in 0..num_entries {
@@ -522,7 +532,8 @@ fn efi_main(image_handle: EFIHandle,
     // let filename = "startup.nsh";
     let filename = "EFI\\boot\\test.txt";
     println!("Loading: {}", filename);
-    let file_handle = load_file(image_handle, filename);
+    let buffer = load_file(image_handle, filename);
+    println!("Yes Buffer: {:?}", buffer);
 
     /*
     let kernel_options = load_kernel_options();
