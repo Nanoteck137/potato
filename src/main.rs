@@ -76,7 +76,7 @@ struct EFIFileHandle {
     write_fn: usize,
     get_position_fn: usize,
     set_position_fn: usize,
-    get_info_fn: unsafe fn(this: &EFIFileHandle, infomation_type: &EFIGuid, buffer_size: &mut u64, &mut *mut u8) -> u64,
+    get_info_fn: unsafe fn(this: &EFIFileHandle, infomation_type: &EFIGuid, buffer_size: &mut u64, *mut u8) -> u64,
     set_info_fn: usize,
     flush_fn: usize,
     open_ex_fn: usize,
@@ -438,23 +438,32 @@ fn load_file(handle: EFIHandle, filename: &str) -> alloc::vec::Vec<u8> {
     let handle = unsafe { &*handle_ptr };
     println!("Status: {}", status & !0x8000000000000000);
 
+    if status & !0x8000000000000000 == 0 {
+        println!("Found the file");
+    }
+
     let mut buffer_size = 0u64;
     let status = unsafe {
-        (handle.get_info_fn)(handle, &GET_INFO_GUID, &mut buffer_size, &mut core::ptr::null_mut())
+        (handle.get_info_fn)(handle, &GET_INFO_GUID, &mut buffer_size, core::ptr::null_mut())
     };
 
     println!("Get Info Status: {}", status & !0x8000000000000000);
     println!("Buffer Size: {}", buffer_size);
 
     let mut buffer = vec![0u8; buffer_size as usize];
+    println!("Allocated buffer size: {}", buffer.len());
+    println!("Allocated buffer capacity: {}", buffer.capacity());
+
     let mut buffer_ptr = buffer.as_mut_ptr();
+    println!("Old Buffer: {:?}", buffer);
     println!("Buffer Pointer: {:#?}", buffer_ptr);
 
     let status = unsafe {
-        (handle.get_info_fn)(handle, &GET_INFO_GUID, &mut buffer_size, &mut buffer_ptr)
+        (handle.get_info_fn)(handle, &GET_INFO_GUID, &mut buffer_size, buffer_ptr)
     };
-
+    
     println!("Buffer: {:?}", buffer);
+    println!("File Size: {}", *(buffer.as_ptr() as *const u64).offset(1));
     println!("Get Info Status: {}", status & !0x8000000000000000);
 
     buffer
@@ -529,11 +538,11 @@ fn efi_main(image_handle: EFIHandle,
     // TODO(patrik): Load the kernel
 
     // let file_handle = load_file(image_handle, "EFI\\boot\\test.txt");
-    // let filename = "startup.nsh";
+    let filename = "startup.nsh";
     let filename = "EFI\\boot\\test.txt";
     println!("Loading: {}", filename);
     let buffer = load_file(image_handle, filename);
-    println!("Yes Buffer: {:?}", buffer);
+    // println!("Yes Buffer: {:?}", buffer);
 
     /*
     let kernel_options = load_kernel_options();
