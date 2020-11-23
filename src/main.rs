@@ -63,19 +63,20 @@ struct EFILoadedImageProtocol<'a> {
 }
 
 const SIMPLE_FILESYSTEM_GUID: EFIGuid = EFIGuid { data1: 0x964e5b22, data2: 0x6459, data3: 0x11d2, data4: [0x8e, 0x39, 0x0, 0xa0, 0xc9, 0x69, 0x72, 0x3b] };
+const GET_INFO_GUID: EFIGuid = EFIGuid { data1: 0x09576e92, data2: 0x6d3f, data3: 0x11d2, data4: [0x8e, 0x39, 0x00, 0xa0, 0xc9, 0x69, 0x72, 0x3b] };
 
 #[repr(C)]
 struct EFIFileHandle {
     revision: u64,
 
-    open_fn: unsafe fn(&EFIFileHandle, &mut *mut EFIFileHandle, &[u16], u64, u64) -> u64,
+    open_fn: unsafe fn(this: &EFIFileHandle, new_handle: &mut *mut EFIFileHandle, filename: *const u16, open_mode: u64, attributes: u64) -> u64,
     close_fn: usize,
     delete_fn: usize,
     read_fn: usize,
     write_fn: usize,
     get_position_fn: usize,
     set_position_fn: usize,
-    get_info_fn: usize,
+    get_info_fn: unsafe fn(this: &EFIFileHandle, infomation_type: &EFIGuid, buffer_size: &mut u64, &mut *mut c_void) -> u64,
     set_info_fn: usize,
     flush_fn: usize,
     open_ex_fn: usize,
@@ -87,7 +88,7 @@ struct EFIFileHandle {
 #[repr(C)]
 struct EFISimpleFilesystem {
     revision: u64,
-    open_volume_fn: unsafe fn(&EFISimpleFilesystem, &mut *mut EFIFileHandle),
+    open_volume_fn: unsafe fn(&EFISimpleFilesystem, &mut *mut EFIFileHandle) -> u64,
 }
 
 #[repr(C)]
@@ -393,22 +394,25 @@ fn load_file(handle: EFIHandle, filename: &str) {
     let table = unsafe { TABLE.unwrap() };
 
     let mut loaded_image_ptr = core::ptr::null_mut();
-    (table.boot_services.handle_protocol_fn)(handle, &LOADED_IMAGE_GUID, &mut loaded_image_ptr);
+    let status = (table.boot_services.handle_protocol_fn)(handle, &LOADED_IMAGE_GUID, &mut loaded_image_ptr);
     let loaded_image = unsafe { &*(loaded_image_ptr as *const EFILoadedImageProtocol) };
+    println!("Status: {}", status & !0x8000000000000000);
     println!("Loaded Image Protocol Pointer: {:#?}", loaded_image_ptr);
     // println!("Loaded Image Protocol: {:#x?}", loaded_image);
 
     let mut simple_filesystem_ptr = core::ptr::null_mut();
-    (table.boot_services.handle_protocol_fn)(loaded_image.device_handle, &SIMPLE_FILESYSTEM_GUID, &mut simple_filesystem_ptr);
+    let status = (table.boot_services.handle_protocol_fn)(loaded_image.device_handle, &SIMPLE_FILESYSTEM_GUID, &mut simple_filesystem_ptr);
     let simple_filesystem = unsafe { &*(simple_filesystem_ptr as *const EFISimpleFilesystem) };
+    println!("Status: {}", status & !0x8000000000000000);
     println!("Simple Filesystem Protocol Pointer: {:#?}", simple_filesystem_ptr);
     // println!("Simple Filesystem Protocol: {:#x?}", simple_filesystem);
 
     let mut volume_ptr = core::ptr::null_mut();
-    unsafe {
-        (simple_filesystem.open_volume_fn)(simple_filesystem, &mut volume_ptr);
-    }
+    let status = unsafe {
+        (simple_filesystem.open_volume_fn)(simple_filesystem, &mut volume_ptr)
+    };
     let volume = unsafe { &*volume_ptr };
+    println!("Status: {}", status & !0x8000000000000000);
     println!("Volume Pointer: {:#x?}", volume_ptr);
 
     let mut buf = [0u16; 100];
@@ -421,13 +425,23 @@ fn load_file(handle: EFIHandle, filename: &str) {
 
     buf[index] = 0u16;
 
-    println!("Buffer: {:?}", buf);
-
-    let mut handle = core::ptr::null_mut();
+    let mut handle_ptr = core::ptr::null_mut();
     let status = unsafe {
-        (volume.open_fn)(volume, &mut handle, &buf, 1, 1)
+        (volume.open_fn)(volume, &mut handle_ptr, buf.as_ptr(), 0x0000000000000001, 0x0000000000000001)
     };
+    let handle = unsafe { &*handle_ptr };
     println!("Status: {}", status & !0x8000000000000000);
+
+
+    let mut buffer = core::ptr::null_mut();
+    let mut buffer_size = 0u64;
+    let status = unsafe {
+        // unsafe fn(this: &EFIFileHandle, infomation_type: &EFIGuid, buffer_size: &mut *mut u64, &mut *mut c_void),
+        (handle.get_info_fn)(handle, &GET_INFO_GUID, &mut buffer_size, &mut buffer)
+    };
+
+    println!("Status: {}", status & !0x8000000000000000);
+    println!("Buffer Size: {}", buffer_size);
 }
 
 #[no_mangle]
@@ -501,7 +515,11 @@ fn efi_main(image_handle: EFIHandle,
 
     // TODO(patrik): Load the kernel
 
-    let file_handle = load_file(image_handle, "test.txt");
+    // let file_handle = load_file(image_handle, "EFI\\boot\\test.txt");
+    // let filename = "startup.nsh";
+    let filename = "EFI\\boot\\test.txt";
+    println!("Loading: {}", filename);
+    let file_handle = load_file(image_handle, filename);
 
     /*
     let kernel_options = load_kernel_options();
