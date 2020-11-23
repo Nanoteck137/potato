@@ -8,9 +8,87 @@ extern crate rlibc;
 #[macro_use] extern crate alloc;
 
 use core::panic::PanicInfo;
+use core::ffi::c_void;
 
 use alloc::alloc::{GlobalAlloc, Layout};
 use alloc::boxed::Box;
+
+type EFIHandle = usize;
+
+#[repr(C)]
+struct EFIGuid {
+    data1: u32,
+    data2: u16,
+    data3: u16,
+    data4: [u8; 8],
+}
+
+impl EFIGuid {
+    fn new(data1: u32, data2: u16, data3: u16, data4: [u8; 8]) -> Self {
+        Self {
+            data1, data2, data3, data4,
+        }
+    }
+}
+
+const LOADED_IMAGE_GUID: EFIGuid = EFIGuid { data1: 0x5B1B31A1, data2: 0x9562, data3: 0x11d2, data4: [0x8E, 0x3F, 0x00, 0xA0, 0xC9, 0x69, 0x72, 0x3B] };
+
+#[repr(C)]
+#[derive(Debug)]
+struct EFIDevicePathProtocol {
+    typ: u8,
+    sub_typ: u8,
+    length: [u8; 2],
+}
+
+#[repr(C)]
+struct EFILoadedImageProtocol<'a> {
+    revision: u32,
+    parent_handle: EFIHandle, 
+    system_table: usize,
+
+    device_handle: EFIHandle,
+    file_path: &'a EFIDevicePathProtocol,
+    reserved: usize,
+
+    load_options_size: u32,
+    load_options: usize,
+
+    image_base: usize,
+    image_size: u64,
+    image_code_type: EFIMemoryType,
+    image_data_type: EFIMemoryType,
+
+    unload_fn: usize,
+}
+
+const SIMPLE_FILESYSTEM_GUID: EFIGuid = EFIGuid { data1: 0x964e5b22, data2: 0x6459, data3: 0x11d2, data4: [0x8e, 0x39, 0x0, 0xa0, 0xc9, 0x69, 0x72, 0x3b] };
+
+#[repr(C)]
+struct EFIFileHandle {
+    revision: u64,
+
+    open_fn: unsafe fn(&EFIFileHandle, &mut *mut EFIFileHandle, &[u16], u64, u64) -> u64,
+    close_fn: usize,
+    delete_fn: usize,
+    read_fn: usize,
+    write_fn: usize,
+    get_position_fn: usize,
+    set_position_fn: usize,
+    get_info_fn: usize,
+    set_info_fn: usize,
+    flush_fn: usize,
+    open_ex_fn: usize,
+    read_ex_fn: usize,
+    write_ex_fn: usize,
+    flush_ex_fn: usize,
+}
+
+#[repr(C)]
+struct EFISimpleFilesystem {
+    revision: u64,
+    open_volume_fn: unsafe fn(&EFISimpleFilesystem, &mut *mut EFIFileHandle),
+}
 
 #[repr(C)]
 struct SimpleTextOutputInterface {
@@ -134,8 +212,8 @@ struct BootServices {
     free_pages_fn: usize,
     get_memory_map_fn: unsafe fn(&mut u64, *mut MemoryDescriptor, 
                                  &mut u64, &mut u64, &mut u32) -> u64,
-    allocate_pool_fn: unsafe fn(u32, u64, &mut *mut u8),
-    free_pool_fn: unsafe fn(*mut u8),
+    allocate_pool_fn: unsafe fn(u32, u64, &mut *mut u8) -> u64,
+    free_pool_fn: unsafe fn(*mut u8) -> u64,
 
     create_event_fn: usize,
     set_timer_fn: usize,
@@ -147,7 +225,8 @@ struct BootServices {
     install_protocol_interface_fn: usize,
     reinstall_protocol_interface_fn: usize,
     uninstall_protocol_interface_fn: usize,
-    handle_protocol_fn: usize,
+
+    handle_protocol_fn: fn(EFIHandle, &EFIGuid, &mut *mut c_void) -> u64,
     pc_handle_protocol_fn: usize,
     register_protocol_notify_fn: usize,
     locate_handle_fn: usize,
@@ -310,8 +389,49 @@ fn alloc_error_handler(layout: alloc::alloc::Layout) -> ! {
     panic!("allocation error: {:?}", layout)
 }
 
+fn load_file(handle: EFIHandle, filename: &str) {
+    let table = unsafe { TABLE.unwrap() };
+
+    let mut loaded_image_ptr = core::ptr::null_mut();
+    (table.boot_services.handle_protocol_fn)(handle, &LOADED_IMAGE_GUID, &mut loaded_image_ptr);
+    let loaded_image = unsafe { &*(loaded_image_ptr as *const EFILoadedImageProtocol) };
+    println!("Loaded Image Protocol Pointer: {:#?}", loaded_image_ptr);
+    // println!("Loaded Image Protocol: {:#x?}", loaded_image);
+
+    let mut simple_filesystem_ptr = core::ptr::null_mut();
+    (table.boot_services.handle_protocol_fn)(loaded_image.device_handle, &SIMPLE_FILESYSTEM_GUID, &mut simple_filesystem_ptr);
+    let simple_filesystem = unsafe { &*(simple_filesystem_ptr as *const EFISimpleFilesystem) };
+    println!("Simple Filesystem Protocol Pointer: {:#?}", simple_filesystem_ptr);
+    // println!("Simple Filesystem Protocol: {:#x?}", simple_filesystem);
+
+    let mut volume_ptr = core::ptr::null_mut();
+    unsafe {
+        (simple_filesystem.open_volume_fn)(simple_filesystem, &mut volume_ptr);
+    }
+    let volume = unsafe { &*volume_ptr };
+    println!("Volume Pointer: {:#x?}", volume_ptr);
+
+    let mut buf = [0u16; 100];
+
+    let mut index = 0;
+    for c in filename.bytes() {
+        buf[index] = c as u16;
+        index += 1;
+    }
+
+    buf[index] = 0u16;
+
+    println!("Buffer: {:?}", buf);
+
+    let mut handle = core::ptr::null_mut();
+    let status = unsafe {
+        (volume.open_fn)(volume, &mut handle, &buf, 1, 1)
+    };
+    println!("Status: {}", status & !0x8000000000000000);
+}
+
 #[no_mangle]
-fn efi_main(_image_handle: u64, 
+fn efi_main(image_handle: EFIHandle, 
             system_table: *const SystemTable<'static>) -> u64 
 {
     let table = unsafe { &*system_table };
@@ -375,13 +495,13 @@ fn efi_main(_image_handle: u64,
         unsafe {
             let ptr = buffer.as_ptr().offset((i * entry_size) as isize);
             let ptr = ptr as *const MemoryDescriptor;
-            println!("Entry: {:#x?}", *ptr);
+            // println!("Entry: {:#x?}", *ptr);
         }
     }
 
     // TODO(patrik): Load the kernel
 
-    load_file();
+    let file_handle = load_file(image_handle, "test.txt");
 
     /*
     let kernel_options = load_kernel_options();
