@@ -270,6 +270,10 @@ impl BootServices {
     {
         (self.allocate_pool_fn)(memory_type, size as u64, buffer);
     }
+
+    unsafe fn free_pool(&self, buffer: *mut u8) {
+        (self.free_pool_fn)(buffer);
+    }
 }
 
 #[repr(C)]
@@ -377,8 +381,8 @@ unsafe impl GlobalAlloc for EFIAllocator {
         buffer
     }
 
-    unsafe fn dealloc(&self, _ptr: *mut u8, _layout: Layout) {
-        // panic!("Dealloc");
+    unsafe fn dealloc(&self, ptr: *mut u8, _layout: Layout) {
+        TABLE.unwrap().boot_services.free_pool(ptr);
     }
 }
 
@@ -436,7 +440,6 @@ fn load_file(handle: EFIHandle, filename: &str) {
     let mut buffer = core::ptr::null_mut();
     let mut buffer_size = 0u64;
     let status = unsafe {
-        // unsafe fn(this: &EFIFileHandle, infomation_type: &EFIGuid, buffer_size: &mut *mut u64, &mut *mut c_void),
         (handle.get_info_fn)(handle, &GET_INFO_GUID, &mut buffer_size, &mut buffer)
     };
 
