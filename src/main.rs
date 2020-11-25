@@ -11,7 +11,6 @@ use core::panic::PanicInfo;
 use core::ffi::c_void;
 
 use alloc::alloc::{GlobalAlloc, Layout};
-use alloc::boxed::Box;
 
 type EFIHandle = usize;
 
@@ -21,14 +20,6 @@ struct EFIGuid {
     data2: u16,
     data3: u16,
     data4: [u8; 8],
-}
-
-impl EFIGuid {
-    fn new(data1: u32, data2: u16, data3: u16, data4: [u8; 8]) -> Self {
-        Self {
-            data1, data2, data3, data4,
-        }
-    }
 }
 
 const LOADED_IMAGE_GUID: EFIGuid = EFIGuid { data1: 0x5B1B31A1, data2: 0x9562, data3: 0x11d2, data4: [0x8E, 0x3F, 0x00, 0xA0, 0xC9, 0x69, 0x72, 0x3B] };
@@ -156,6 +147,8 @@ bitflags! {
 }
 
 #[derive(Clone, Copy, Debug)]
+#[repr(C)]
+#[allow(dead_code)]
 enum EFIMemoryType {
     ReservedMemoryType      = 0x00000000,
     LoaderCode              = 0x00000001,
@@ -172,9 +165,6 @@ enum EFIMemoryType {
     MemoryMappedIOPortSpace = 0x0000000c,
     PalCode                 = 0x0000000d,
     PersistentMemory        = 0x0000000e,
-
-    // Used to force Rust to use u32 insteed of u8 for this enum
-    MaxValue                = 0xffffffff,
 }
 
 #[repr(C)]
@@ -186,19 +176,6 @@ struct MemoryDescriptor {
     virtual_start: VirtualAddress,
     number_of_pages: u64,
     attribute: EFIMemoryAttribute,
-}
-
-impl MemoryDescriptor {
-    fn empty() -> Self {
-        Self {
-            typ: EFIMemoryType::ReservedMemoryType,
-            pad: 0,
-            physical_start: PhysicalAddress(0),
-            virtual_start: VirtualAddress(0),
-            number_of_pages: 0,
-            attribute: EFIMemoryAttribute::NONE,
-        }
-    }
 }
 
 #[repr(C)]
@@ -375,15 +352,15 @@ struct EFIAllocator;
 
 unsafe impl GlobalAlloc for EFIAllocator {
     unsafe fn alloc(&self, layout: Layout) -> *mut u8 {
-        println!("[DEBUG]: Allocate {} bytes", layout.size());
+        // println!("[DEBUG]: Allocate {} bytes", layout.size());
         let mut buffer = core::ptr::null_mut();
         TABLE.unwrap().boot_services.allocate_pool(4, layout.size(), &mut buffer);
 
         buffer
     }
 
-    unsafe fn dealloc(&self, ptr: *mut u8, layout: Layout) {
-        println!("[DEBUG]: Deallocate {} bytes", layout.size());
+    unsafe fn dealloc(&self, ptr: *mut u8, _layout: Layout) {
+        // println!("[DEBUG]: Deallocate {} bytes", layout.size());
         TABLE.unwrap().boot_services.free_pool(ptr);
     }
 }
@@ -454,7 +431,7 @@ fn load_file(handle: EFIHandle, filename: &str) -> alloc::vec::Vec<u8> {
     println!("Allocated buffer size: {}", buffer.len());
     println!("Allocated buffer capacity: {}", buffer.capacity());
 
-    let mut buffer_ptr = buffer.as_mut_ptr();
+    let buffer_ptr = buffer.as_mut_ptr();
     println!("Old Buffer: {:?}", buffer);
     println!("Buffer Pointer: {:#?}", buffer_ptr);
 
@@ -537,12 +514,9 @@ fn efi_main(image_handle: EFIHandle,
 
     // TODO(patrik): Load the kernel
 
-    // let file_handle = load_file(image_handle, "EFI\\boot\\test.txt");
-    let filename = "startup.nsh";
     let filename = "EFI\\boot\\test.txt";
     println!("Loading: {}", filename);
     let buffer = load_file(image_handle, filename);
-    // println!("Yes Buffer: {:?}", buffer);
 
     /*
     let kernel_options = load_kernel_options();
