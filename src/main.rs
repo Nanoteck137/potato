@@ -14,6 +14,50 @@ use alloc::alloc::{GlobalAlloc, Layout};
 
 type EFIHandle = usize;
 
+#[derive(PartialEq, Debug)]
+#[repr(u64)]
+#[allow(dead_code)]
+enum EFIStatus {
+    Success = 0,
+
+    WarnUnknownGlyph  = 1,
+    WarnDeleteFailure = 2,
+    WarnWriteFailure  = 3,
+    WarnBufferToSmall = 4,
+
+    LoadError           = 0x8000000000000000 | 1,
+    InvalidParameter    = 0x8000000000000000 | 2,
+    Unsupported         = 0x8000000000000000 | 3,
+    BadBufferSize       = 0x8000000000000000 | 4,
+    BufferTooSmall      = 0x8000000000000000 | 5,
+    NotReady            = 0x8000000000000000 | 6,
+    DeviceError         = 0x8000000000000000 | 7,
+    WriteProtected      = 0x8000000000000000 | 8,
+    OutOfResources      = 0x8000000000000000 | 9,
+    VolumeCorrupted     = 0x8000000000000000 | 10,
+    VolumeFull          = 0x8000000000000000 | 11,
+    NoMedia             = 0x8000000000000000 | 12,
+    MediaChanged        = 0x8000000000000000 | 13,
+    NotFound            = 0x8000000000000000 | 14,
+    AccessDenied        = 0x8000000000000000 | 15,
+    NoResponse          = 0x8000000000000000 | 16,
+    NoMapping           = 0x8000000000000000 | 17,
+    Timeout             = 0x8000000000000000 | 18,
+    NotStarted          = 0x8000000000000000 | 19,
+    AlreadyStarted      = 0x8000000000000000 | 20,
+    Aborted             = 0x8000000000000000 | 21,
+    ICMPError           = 0x8000000000000000 | 22,
+    TFTPError           = 0x8000000000000000 | 23,
+    ProtocolError       = 0x8000000000000000 | 24,
+    IncompatibleVersion = 0x8000000000000000 | 25,
+    SecurityViolation   = 0x8000000000000000 | 26,
+    CRCError            = 0x8000000000000000 | 27,
+    EndOfMedia          = 0x8000000000000000 | 28,
+    EndOfFile           = 0x8000000000000000 | 31,
+    InvalidLanguage     = 0x8000000000000000 | 32,
+    CompromisedData     = 0x8000000000000000 | 33,
+}
+
 #[repr(C)]
 struct EFIGuid {
     data1: u32,
@@ -60,14 +104,14 @@ const GET_INFO_GUID: EFIGuid = EFIGuid { data1: 0x09576e92, data2: 0x6d3f, data3
 struct EFIFileHandle {
     revision: u64,
 
-    open_fn: unsafe fn(this: &EFIFileHandle, new_handle: &mut *mut EFIFileHandle, filename: *const u16, open_mode: u64, attributes: u64) -> u64,
+    open_fn: unsafe fn(this: &EFIFileHandle, new_handle: &mut *mut EFIFileHandle, filename: *const u16, open_mode: u64, attributes: u64) -> EFIStatus,
     close_fn: usize,
     delete_fn: usize,
     read_fn: usize,
     write_fn: usize,
     get_position_fn: usize,
     set_position_fn: usize,
-    get_info_fn: unsafe fn(this: &EFIFileHandle, infomation_type: &EFIGuid, buffer_size: &mut u64, *mut u8) -> u64,
+    get_info_fn: unsafe fn(this: &EFIFileHandle, infomation_type: &EFIGuid, buffer_size: &mut u64, *mut u8) -> EFIStatus,
     set_info_fn: usize,
     flush_fn: usize,
     open_ex_fn: usize,
@@ -79,21 +123,21 @@ struct EFIFileHandle {
 #[repr(C)]
 struct EFISimpleFilesystem {
     revision: u64,
-    open_volume_fn: unsafe fn(&EFISimpleFilesystem, &mut *mut EFIFileHandle) -> u64,
+    open_volume_fn: unsafe fn(&EFISimpleFilesystem, &mut *mut EFIFileHandle) -> EFIStatus,
 }
 
 #[repr(C)]
 struct SimpleTextOutputInterface {
     reset_fn: usize,
 
-    output_string_fn: unsafe fn(&SimpleTextOutputInterface, *const u16) -> u64,
+    output_string_fn: unsafe fn(&SimpleTextOutputInterface, *const u16) -> EFIStatus,
     test_string_fn: usize,
     
     quary_mode_fn: usize,
     set_mode_fn: usize,
     set_attribute_fn: usize,
 
-    clear_screen_fn: unsafe fn(&SimpleTextOutputInterface) -> u64,
+    clear_screen_fn: unsafe fn(&SimpleTextOutputInterface) -> EFIStatus,
     set_cursor_position_fn: usize,
     enable_cursor_fn: usize,
 
@@ -189,9 +233,9 @@ struct BootServices {
     allocate_pages_fn: usize,
     free_pages_fn: usize,
     get_memory_map_fn: unsafe fn(&mut u64, *mut MemoryDescriptor, 
-                                 &mut u64, &mut u64, &mut u32) -> u64,
-    allocate_pool_fn: unsafe fn(u32, u64, &mut *mut u8) -> u64,
-    free_pool_fn: unsafe fn(*mut u8) -> u64,
+                                 &mut u64, &mut u64, &mut u32) -> EFIStatus,
+    allocate_pool_fn: unsafe fn(u32, u64, &mut *mut u8) -> EFIStatus,
+    free_pool_fn: unsafe fn(*mut u8) -> EFIStatus,
 
     create_event_fn: usize,
     set_timer_fn: usize,
@@ -204,7 +248,7 @@ struct BootServices {
     reinstall_protocol_interface_fn: usize,
     uninstall_protocol_interface_fn: usize,
 
-    handle_protocol_fn: fn(EFIHandle, &EFIGuid, &mut *mut c_void) -> u64,
+    handle_protocol_fn: fn(EFIHandle, &EFIGuid, &mut *mut c_void) -> EFIStatus,
     pc_handle_protocol_fn: usize,
     register_protocol_notify_fn: usize,
     locate_handle_fn: usize,
@@ -243,13 +287,13 @@ struct BootServices {
 
 impl BootServices {
     unsafe fn allocate_pool(&self, memory_type: u32, 
-                            size: usize, buffer: &mut *mut u8) 
+                            size: usize, buffer: &mut *mut u8) -> EFIStatus
     {
-        (self.allocate_pool_fn)(memory_type, size as u64, buffer);
+        (self.allocate_pool_fn)(memory_type, size as u64, buffer)
     }
 
-    unsafe fn free_pool(&self, buffer: *mut u8) {
-        (self.free_pool_fn)(buffer);
+    unsafe fn free_pool(&self, buffer: *mut u8) -> EFIStatus {
+        (self.free_pool_fn)(buffer)
     }
 }
 
@@ -379,14 +423,14 @@ fn load_file(handle: EFIHandle, filename: &str) -> alloc::vec::Vec<u8> {
     let mut loaded_image_ptr = core::ptr::null_mut();
     let status = (table.boot_services.handle_protocol_fn)(handle, &LOADED_IMAGE_GUID, &mut loaded_image_ptr);
     let loaded_image = unsafe { &*(loaded_image_ptr as *const EFILoadedImageProtocol) };
-    println!("Status: {}", status & !0x8000000000000000);
+    println!("Status: {:?}", status);
     println!("Loaded Image Protocol Pointer: {:#?}", loaded_image_ptr);
     // println!("Loaded Image Protocol: {:#x?}", loaded_image);
 
     let mut simple_filesystem_ptr = core::ptr::null_mut();
     let status = (table.boot_services.handle_protocol_fn)(loaded_image.device_handle, &SIMPLE_FILESYSTEM_GUID, &mut simple_filesystem_ptr);
     let simple_filesystem = unsafe { &*(simple_filesystem_ptr as *const EFISimpleFilesystem) };
-    println!("Status: {}", status & !0x8000000000000000);
+    println!("Status: {:?}", status);
     println!("Simple Filesystem Protocol Pointer: {:#?}", simple_filesystem_ptr);
     // println!("Simple Filesystem Protocol: {:#x?}", simple_filesystem);
 
@@ -395,7 +439,7 @@ fn load_file(handle: EFIHandle, filename: &str) -> alloc::vec::Vec<u8> {
         (simple_filesystem.open_volume_fn)(simple_filesystem, &mut volume_ptr)
     };
     let volume = unsafe { &*volume_ptr };
-    println!("Status: {}", status & !0x8000000000000000);
+    println!("Status: {:?}", status);
     println!("Volume Pointer: {:#x?}", volume_ptr);
 
     let mut buf = [0u16; 1024];
@@ -413,9 +457,9 @@ fn load_file(handle: EFIHandle, filename: &str) -> alloc::vec::Vec<u8> {
         (volume.open_fn)(volume, &mut handle_ptr, buf.as_ptr(), 0x0000000000000001, 0x0000000000000001)
     };
     let handle = unsafe { &*handle_ptr };
-    println!("Status: {}", status & !0x8000000000000000);
+    println!("Status: {:?}", status);
 
-    if status & !0x8000000000000000 == 0 {
+    if status == EFIStatus::Success {
         println!("Found the file");
     }
 
@@ -424,8 +468,7 @@ fn load_file(handle: EFIHandle, filename: &str) -> alloc::vec::Vec<u8> {
         (handle.get_info_fn)(handle, &GET_INFO_GUID, &mut buffer_size, core::ptr::null_mut())
     };
 
-    println!("Get Info Status: {}", status & !0x8000000000000000);
-    println!("Buffer Size: {}", buffer_size);
+    println!("Get Info Status: {:?}", status);
 
     let mut buffer = vec![0u8; buffer_size as usize];
     println!("Allocated buffer size: {}", buffer.len());
@@ -441,7 +484,7 @@ fn load_file(handle: EFIHandle, filename: &str) -> alloc::vec::Vec<u8> {
     
     println!("Buffer: {:?}", buffer);
     println!("File Size: {}", *(buffer.as_ptr() as *const u64).offset(1));
-    println!("Get Info Status: {}", status & !0x8000000000000000);
+    println!("Get Info Status: {:?}", status);
 
     buffer
 }
@@ -498,7 +541,7 @@ fn efi_main(image_handle: EFIHandle,
         )
     };
 
-    println!("Status: {}", status & !0x8000000000000000);
+    println!("Status: {:?}", status);
 
     let num_entries = map_size / entry_size;
 
