@@ -107,11 +107,11 @@ struct EFIFileHandle {
     open_fn: unsafe fn(this: &EFIFileHandle, new_handle: &mut *mut EFIFileHandle, filename: *const u16, open_mode: u64, attributes: u64) -> EFIStatus,
     close_fn: usize,
     delete_fn: usize,
-    read_fn: usize,
+    read_fn: unsafe fn(this: &EFIFileHandle, buffer_size: &mut u64, buffer: *mut u8) -> EFIStatus,
     write_fn: usize,
     get_position_fn: usize,
     set_position_fn: usize,
-    get_info_fn: unsafe fn(this: &EFIFileHandle, infomation_type: &EFIGuid, buffer_size: &mut u64, *mut u8) -> EFIStatus,
+    get_info_fn: unsafe fn(this: &EFIFileHandle, infomation_type: &EFIGuid, buffer_size: &mut u64, buffer: *mut u8) -> EFIStatus,
     set_info_fn: usize,
     flush_fn: usize,
     open_ex_fn: usize,
@@ -481,12 +481,20 @@ fn load_file(handle: EFIHandle, filename: &str) -> alloc::vec::Vec<u8> {
     let status = unsafe {
         (handle.get_info_fn)(handle, &GET_INFO_GUID, &mut buffer_size, buffer_ptr)
     };
-    
+
+    let file_size = unsafe { *(buffer.as_ptr() as *const u64).offset(1) };
     println!("Buffer: {:?}", buffer);
-    println!("File Size: {}", *(buffer.as_ptr() as *const u64).offset(1));
+    println!("File Size: {}", file_size);
     println!("Get Info Status: {:?}", status);
 
-    buffer
+    let mut file_content = vec![0; file_size as usize];
+    let mut read_size = file_size;
+    let status = unsafe {
+        (handle.read_fn)(handle, &mut read_size, file_content.as_mut_ptr())
+    };
+    println!("Read Status: {:?}, {}", status, read_size);
+
+    file_content
 }
 
 #[no_mangle]
@@ -551,15 +559,15 @@ fn efi_main(image_handle: EFIHandle,
         unsafe {
             let ptr = buffer.as_ptr().offset((i * entry_size) as isize);
             let ptr = ptr as *const MemoryDescriptor;
-            // println!("Entry: {:#x?}", *ptr);
         }
     }
 
     // TODO(patrik): Load the kernel
 
-    let filename = "EFI\\boot\\test.txt";
+    let filename = "EFI\\boot\\options.txt";
     println!("Loading: {}", filename);
     let buffer = load_file(image_handle, filename);
+    println!("Buffer: {:?}", buffer);
 
     /*
     let kernel_options = load_kernel_options();

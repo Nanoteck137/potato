@@ -1,0 +1,5 @@
+[bootloader]
+load_font=kernel.fnt
+
+[kernel]
+wooh="Hello World"
