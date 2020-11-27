@@ -1,5 +1,17 @@
-#+TITLE: potato TODO
+#+TITLE: Potato Bootloader TODO
 
-* Tasks
-** [-] Cleanup
-*** TODO EFI Interfaces
+* Stuff todo
+** EFI Interface
+*** TODO Move the EFI Stuff to a library
+This should be done now ok
+*** TODO Wrap all the function pointers in a function wrapper
+*** TODO Cleanup the API
+
+
+** Bootloader
+*** TODO File Loading
+*** TODO Option Parsing
+*** TODO Load the font data for the kernel
+*** TODO Load the kernel
+*** TODO Get the memory map
+*** TODO Enter the kernel
