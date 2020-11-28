@@ -10,7 +10,7 @@ extern crate uefi;
 use uefi::{ EFIHandle, EFIStatus, SimpleTextOutputInterface };
 use uefi::{ SystemTable, MemoryDescriptor };
 use uefi::{ EFILoadedImageProtocol, EFISimpleFilesystem };
-use uefi::{ GET_INFO_GUID, LOADED_IMAGE_GUID, SIMPLE_FILESYSTEM_GUID };
+use uefi::{ LOADED_IMAGE_GUID, SIMPLE_FILESYSTEM_GUID };
 
 use core::panic::PanicInfo;
 
@@ -162,60 +162,10 @@ fn load_file(handle: EFIHandle, filename: &str) -> Option<Vec<u8>> {
     let simple_filesystem = simple_filesystem(&table, &loaded_image);
     let volume = simple_filesystem.open_volume();
 
-    let mut buf = [0u16; 1024];
+    let file_handle = volume.open(filename,
+                                  0x0000000000000001, 0x0000000000000001);
 
-    let mut index = 0;
-    for c in filename.bytes() {
-        buf[index] = c as u16;
-        index += 1;
-    }
-
-    buf[index] = 0u16;
-
-    let mut handle_ptr = core::ptr::null_mut();
-    let status = unsafe {
-        // TODO(patrik): Create enums for the open function
-        (volume.open_fn)(volume,
-                         &mut handle_ptr,
-                         buf.as_ptr(),
-                         0x0000000000000001,
-                         0x0000000000000001)
-    };
-    let handle = unsafe { &*handle_ptr };
-    // TODO(patrik): Check status
-
-    if status == EFIStatus::Success {
-        println!("Found the file");
-    }
-
-    let mut buffer_size = 0u64;
-    let status = unsafe {
-        (handle.get_info_fn)(handle,
-                             &GET_INFO_GUID,
-                             &mut buffer_size,
-                             core::ptr::null_mut())
-    };
-    // TODO(patrik): Check status
-
-    let mut buffer = vec![0u8; buffer_size as usize];
-    let buffer_ptr = buffer.as_mut_ptr();
-
-    let status = unsafe {
-        (handle.get_info_fn)(handle,
-                             &GET_INFO_GUID,
-                             &mut buffer_size,
-                             buffer_ptr)
-    };
-    // TODO(patrik): Check status
-
-    let file_size = unsafe { *(buffer.as_ptr() as *const u64).offset(1) };
-
-    let mut file_content = vec![0; file_size as usize];
-    let mut read_size = file_size;
-    let status = unsafe {
-        (handle.read_fn)(handle, &mut read_size, file_content.as_mut_ptr())
-    };
-    // TODO(patrik): Check status
+    let file_content = file_handle.read_to_buffer();
 
     Some(file_content)
 }
@@ -240,7 +190,7 @@ fn efi_main(image_handle: EFIHandle,
     let mut entry_size = 0;
     let mut entry_version = 0;
 
-    let status = unsafe {
+    let _status = unsafe {
         (table.boot_services.get_memory_map_fn)(
             &mut map_size,
             core::ptr::null_mut(),
@@ -279,7 +229,7 @@ fn efi_main(image_handle: EFIHandle,
     for i in 0..num_entries {
         unsafe {
             let ptr = buffer.as_ptr().offset((i * entry_size) as isize);
-            let ptr = ptr as *const MemoryDescriptor;
+            let _ptr = ptr as *const MemoryDescriptor;
         }
     }
 
@@ -289,7 +239,7 @@ fn efi_main(image_handle: EFIHandle,
     println!("Loading: {}", filename);
 
     let buffer = load_file(image_handle, filename).unwrap();
-    println!("Buffer: {:?}", buffer);
+    // println!("Buffer: {:?}", buffer);
     println!("Text:\n{}", core::str::from_utf8(&buffer[..]).unwrap());
 
     /*

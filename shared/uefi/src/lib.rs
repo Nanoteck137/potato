@@ -2,6 +2,7 @@
 #![allow(dead_code)]
 
 #[macro_use] extern crate bitflags;
+#[macro_use] extern crate alloc;
 
 use core::ffi::c_void;
 
@@ -94,23 +95,136 @@ pub const SIMPLE_FILESYSTEM_GUID: EFIGuid = EFIGuid { data1: 0x964e5b22, data2: 
 pub const GET_INFO_GUID: EFIGuid = EFIGuid { data1: 0x09576e92, data2: 0x6d3f, data3: 0x11d2, data4: [0x8e, 0x39, 0x00, 0xa0, 0xc9, 0x69, 0x72, 0x3b] };
 
 #[repr(C)]
+#[derive(Copy, Clone, Debug)]
+pub struct EFITime {
+    year: u16,
+    month: u8,
+    day: u8,
+    hour: u8,
+    minute: u8,
+    second: u8,
+    pad1: u8,
+    nano_second: u32,
+    timezone: u16,
+    daylight: u8,
+    pad2: u8,
+}
+
+#[repr(C)]
+#[derive(Copy, Clone, Debug)]
+pub struct EFIFileInfo {
+    size: u64,
+    pub file_size: u64,
+    pub physical_size: u64,
+    pub create_time: EFITime,
+    pub last_access_time: EFITime,
+    pub modification_time: EFITime,
+    pub attribute: u64,
+
+    // NOTE(patrik): MISSING FILENAME
+}
+
+#[repr(C)]
 pub struct EFIFileHandle {
     revision: u64,
 
-    pub open_fn: unsafe fn(this: &EFIFileHandle, new_handle: &mut *mut EFIFileHandle, filename: *const u16, open_mode: u64, attributes: u64) -> EFIStatus,
+    open_fn: unsafe fn(this: &EFIFileHandle, new_handle: &mut *mut EFIFileHandle, filename: *const u16, open_mode: u64, attributes: u64) -> EFIStatus,
     close_fn: usize,
     delete_fn: usize,
     pub read_fn: unsafe fn(this: &EFIFileHandle, buffer_size: &mut u64, buffer: *mut u8) -> EFIStatus,
     write_fn: usize,
     get_position_fn: usize,
     set_position_fn: usize,
-    pub get_info_fn: unsafe fn(this: &EFIFileHandle, infomation_type: &EFIGuid, buffer_size: &mut u64, buffer: *mut u8) -> EFIStatus,
+    get_info_fn: unsafe fn(this: &EFIFileHandle, infomation_type: &EFIGuid, buffer_size: &mut u64, buffer: *mut u8) -> EFIStatus,
     set_info_fn: usize,
     flush_fn: usize,
     open_ex_fn: usize,
     read_ex_fn: usize,
     write_ex_fn: usize,
     flush_ex_fn: usize,
+}
+
+impl EFIFileHandle {
+    pub fn open<'a>(&self, filename: &str,
+                    open_mode: u64, attribute: u64)
+        -> &'a EFIFileHandle
+    {
+        let mut filename_buffer = [0u16; 1024];
+
+        let mut index = 0;
+        for c in filename.bytes() {
+            filename_buffer[index] = c as u16;
+            index += 1;
+        }
+
+        filename_buffer[index] = 0u16;
+
+        let mut handle_ptr = core::ptr::null_mut();
+        let status = unsafe {
+            (self.open_fn)(self, &mut handle_ptr,
+                            filename_buffer.as_ptr(), open_mode, attribute)
+        };
+
+        if status != EFIStatus::Success {
+            panic!("'EFIFileHandle' failed to open '{}' error: {:?}",
+                   filename, status)
+        }
+
+        let handle = unsafe { &*handle_ptr };
+
+        handle
+    }
+
+    pub fn read_to_buffer(&self) -> alloc::vec::Vec<u8> {
+        let file_info = self.get_info();
+        let mut buffer = vec![0u8; file_info.file_size as usize];
+
+        let mut read_size = file_info.file_size;
+        let status = unsafe {
+            (self.read_fn)(self, &mut read_size,
+                           buffer.as_mut_ptr())
+        };
+
+        if status != EFIStatus::Success {
+            panic!("'EFIFileHandle::read_to_buffer' failed to read error: {:?}",
+                   status);
+        }
+
+        buffer
+    }
+
+    pub fn get_info(&self) -> EFIFileInfo {
+        let mut buffer_size = 0u64;
+        let status = unsafe {
+            (self.get_info_fn)(self,
+                               &GET_INFO_GUID,
+                               &mut buffer_size,
+                               core::ptr::null_mut())
+        };
+
+        if status != EFIStatus::BufferTooSmall {
+            panic!("'EFIFileHandle::get_info' expected BufferTooSmall got {:?}",
+                   status);
+        }
+
+        let mut buffer = vec![0u8; buffer_size as usize];
+        let buffer_ptr = buffer.as_mut_ptr();
+
+        let status = unsafe {
+            (self.get_info_fn)(self,
+                               &GET_INFO_GUID,
+                               &mut buffer_size,
+                               buffer_ptr)
+        };
+
+        if status != EFIStatus::Success {
+            panic!("'EFIFIleHandle::get_info' error: {:?}", status);
+        }
+
+        let file_info = unsafe { *(buffer.as_ptr() as *const EFIFileInfo) };
+
+        file_info
+    }
 }
 
 #[repr(C)]
@@ -128,7 +242,7 @@ impl EFISimpleFilesystem {
         };
 
         if status != EFIStatus::Success {
-            panic!("Failed to open root volume - error: {:?}", status);
+            panic!("'EFISimpleFilesystem::open_volume' failed to open root volume - error: {:?}", status);
         }
 
         let handle = unsafe { &*handle_ptr };
