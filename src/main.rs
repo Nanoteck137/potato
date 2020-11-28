@@ -7,11 +7,15 @@ extern crate rlibc;
 #[macro_use] extern crate alloc;
 extern crate uefi;
 
-use uefi::{ EFIHandle, EFIStatus, SimpleTextOutputInterface, LOADED_IMAGE_GUID, EFILoadedImageProtocol, SIMPLE_FILESYSTEM_GUID, EFISimpleFilesystem, GET_INFO_GUID, SystemTable, MemoryDescriptor };
+use uefi::{ EFIHandle, EFIStatus, SimpleTextOutputInterface };
+use uefi::{ SystemTable, MemoryDescriptor };
+use uefi::{ EFILoadedImageProtocol, EFISimpleFilesystem };
+use uefi::{ GET_INFO_GUID, LOADED_IMAGE_GUID, SIMPLE_FILESYSTEM_GUID };
 
 use core::panic::PanicInfo;
 
 use alloc::alloc::{GlobalAlloc, Layout};
+use alloc::vec::Vec;
 
 struct TextWriter<'a> {
     output: &'a SimpleTextOutputInterface,
@@ -83,9 +87,9 @@ macro_rules! println {
     ($($arg:tt)*) => (print!("{}\n", format_args!($($arg)*)));
 }
 
-struct EFIAllocator;
+struct Allocator;
 
-unsafe impl GlobalAlloc for EFIAllocator {
+unsafe impl GlobalAlloc for Allocator {
     unsafe fn alloc(&self, layout: Layout) -> *mut u8 {
         // println!("[DEBUG]: Allocate {} bytes", layout.size());
         let mut buffer = core::ptr::null_mut();
@@ -101,37 +105,62 @@ unsafe impl GlobalAlloc for EFIAllocator {
 }
 
 #[global_allocator]
-static A: EFIAllocator = EFIAllocator;
+static A: Allocator = Allocator;
 
 #[alloc_error_handler]
-fn alloc_error_handler(layout: alloc::alloc::Layout) -> ! {
+fn alloc_error_handler(layout: Layout) -> ! {
     panic!("allocation error: {:?}", layout)
 }
 
-fn load_file(handle: EFIHandle, filename: &str) -> alloc::vec::Vec<u8> {
-    let table = unsafe { TABLE.unwrap() };
+fn loaded_image<'a>(table: &SystemTable, handle: EFIHandle) -> &'a EFILoadedImageProtocol<'a> {
 
     let mut loaded_image_ptr = core::ptr::null_mut();
-    let status = (table.boot_services.handle_protocol_fn)(handle, &LOADED_IMAGE_GUID, &mut loaded_image_ptr);
-    let loaded_image = unsafe { &*(loaded_image_ptr as *const EFILoadedImageProtocol) };
-    println!("Status: {:?}", status);
-    println!("Loaded Image Protocol Pointer: {:#?}", loaded_image_ptr);
-    // println!("Loaded Image Protocol: {:#x?}", loaded_image);
-
-    let mut simple_filesystem_ptr = core::ptr::null_mut();
-    let status = (table.boot_services.handle_protocol_fn)(loaded_image.device_handle, &SIMPLE_FILESYSTEM_GUID, &mut simple_filesystem_ptr);
-    let simple_filesystem = unsafe { &*(simple_filesystem_ptr as *const EFISimpleFilesystem) };
-    println!("Status: {:?}", status);
-    println!("Simple Filesystem Protocol Pointer: {:#?}", simple_filesystem_ptr);
-    // println!("Simple Filesystem Protocol: {:#x?}", simple_filesystem);
-
-    let mut volume_ptr = core::ptr::null_mut();
     let status = unsafe {
-        (simple_filesystem.open_volume_fn)(simple_filesystem, &mut volume_ptr)
+        (table.boot_services.handle_protocol_fn)(
+            handle,
+            &LOADED_IMAGE_GUID,
+            &mut loaded_image_ptr)
     };
-    let volume = unsafe { &*volume_ptr };
-    println!("Status: {:?}", status);
-    println!("Volume Pointer: {:#x?}", volume_ptr);
+
+    if status != EFIStatus::Success {
+        panic!("'LoadedImageProtocol' error: {:?}", status);
+    }
+
+    let loaded_image =
+        unsafe { &*(loaded_image_ptr as *const EFILoadedImageProtocol) };
+
+    loaded_image
+}
+
+fn simple_filesystem<'a>(table: &SystemTable,
+                         loaded_image: &'a EFILoadedImageProtocol)
+    -> &'a EFISimpleFilesystem
+{
+    let mut simple_filesystem_ptr = core::ptr::null_mut();
+    let status = unsafe {
+        (table.boot_services.handle_protocol_fn)(
+            loaded_image.device_handle,
+            &SIMPLE_FILESYSTEM_GUID,
+            &mut simple_filesystem_ptr)
+    };
+
+    if status != EFIStatus::Success {
+        panic!("'SimpleFilesystem' error: {:?}", status);
+    }
+
+    let simple_filesystem =
+        unsafe { &*(simple_filesystem_ptr as *const EFISimpleFilesystem) };
+    // TODO(patrik): Check status
+
+    simple_filesystem
+}
+
+fn load_file(handle: EFIHandle, filename: &str) -> Option<Vec<u8>> {
+    let table = unsafe { TABLE.unwrap() };
+
+    let loaded_image = loaded_image(&table, handle);
+    let simple_filesystem = simple_filesystem(&table, &loaded_image);
+    let volume = simple_filesystem.open_volume();
 
     let mut buf = [0u16; 1024];
 
@@ -145,10 +174,15 @@ fn load_file(handle: EFIHandle, filename: &str) -> alloc::vec::Vec<u8> {
 
     let mut handle_ptr = core::ptr::null_mut();
     let status = unsafe {
-        (volume.open_fn)(volume, &mut handle_ptr, buf.as_ptr(), 0x0000000000000001, 0x0000000000000001)
+        // TODO(patrik): Create enums for the open function
+        (volume.open_fn)(volume,
+                         &mut handle_ptr,
+                         buf.as_ptr(),
+                         0x0000000000000001,
+                         0x0000000000000001)
     };
     let handle = unsafe { &*handle_ptr };
-    println!("Status: {:?}", status);
+    // TODO(patrik): Check status
 
     if status == EFIStatus::Success {
         println!("Found the file");
@@ -156,44 +190,40 @@ fn load_file(handle: EFIHandle, filename: &str) -> alloc::vec::Vec<u8> {
 
     let mut buffer_size = 0u64;
     let status = unsafe {
-        (handle.get_info_fn)(handle, &GET_INFO_GUID, &mut buffer_size, core::ptr::null_mut())
+        (handle.get_info_fn)(handle,
+                             &GET_INFO_GUID,
+                             &mut buffer_size,
+                             core::ptr::null_mut())
     };
-
-    println!("Get Info Status: {:?}", status);
+    // TODO(patrik): Check status
 
     let mut buffer = vec![0u8; buffer_size as usize];
-    println!("Allocated buffer size: {}", buffer.len());
-    println!("Allocated buffer capacity: {}", buffer.capacity());
-
     let buffer_ptr = buffer.as_mut_ptr();
-    println!("Old Buffer: {:?}", buffer);
-    println!("Buffer Pointer: {:#?}", buffer_ptr);
 
     let status = unsafe {
-        (handle.get_info_fn)(handle, &GET_INFO_GUID, &mut buffer_size, buffer_ptr)
+        (handle.get_info_fn)(handle,
+                             &GET_INFO_GUID,
+                             &mut buffer_size,
+                             buffer_ptr)
     };
+    // TODO(patrik): Check status
 
     let file_size = unsafe { *(buffer.as_ptr() as *const u64).offset(1) };
-    println!("Buffer: {:?}", buffer);
-    println!("File Size: {}", file_size);
-    println!("Get Info Status: {:?}", status);
 
     let mut file_content = vec![0; file_size as usize];
     let mut read_size = file_size;
     let status = unsafe {
         (handle.read_fn)(handle, &mut read_size, file_content.as_mut_ptr())
     };
-    println!("Read Status: {:?}, {}", status, read_size);
+    // TODO(patrik): Check status
 
-    file_content
+    Some(file_content)
 }
 
 #[no_mangle]
 fn efi_main(image_handle: EFIHandle, 
-            system_table: *const SystemTable<'static>) -> u64 
+            table: &SystemTable<'static>) -> u64
 {
-    let table = unsafe { &*system_table };
-    
     unsafe {
         table.console_out.clear_screen();
     }
@@ -257,12 +287,15 @@ fn efi_main(image_handle: EFIHandle,
 
     let filename = "EFI\\boot\\options.txt";
     println!("Loading: {}", filename);
-    let buffer = load_file(image_handle, filename);
+
+    let buffer = load_file(image_handle, filename).unwrap();
     println!("Buffer: {:?}", buffer);
+    println!("Text:\n{}", core::str::from_utf8(&buffer[..]).unwrap());
 
     /*
     let kernel_options = load_kernel_options();
     let kernel = load_kernel(kernel_options);
+    let memory_map = table.boot_services.get_memory_map();
     exit_boot_services();
     call_kernel_entry(kernel);
     */

@@ -116,7 +116,25 @@ pub struct EFIFileHandle {
 #[repr(C)]
 pub struct EFISimpleFilesystem {
     revision: u64,
-    pub open_volume_fn: unsafe fn(&EFISimpleFilesystem, &mut *mut EFIFileHandle) -> EFIStatus,
+    open_volume_fn: unsafe fn(&EFISimpleFilesystem, &mut *mut EFIFileHandle) -> EFIStatus,
+}
+
+impl EFISimpleFilesystem {
+    pub fn open_volume<'a>(&self) -> &'a EFIFileHandle {
+        let mut handle_ptr = core::ptr::null_mut();
+
+        let status = unsafe {
+            (self.open_volume_fn)(self, &mut handle_ptr)
+        };
+
+        if status != EFIStatus::Success {
+            panic!("Failed to open root volume - error: {:?}", status);
+        }
+
+        let handle = unsafe { &*handle_ptr };
+
+        handle
+    }
 }
 
 #[repr(C)]
@@ -241,7 +259,7 @@ pub struct BootServices {
     reinstall_protocol_interface_fn: usize,
     uninstall_protocol_interface_fn: usize,
 
-    pub handle_protocol_fn: fn(EFIHandle, &EFIGuid, &mut *mut c_void) -> EFIStatus,
+    pub handle_protocol_fn: unsafe fn(EFIHandle, &EFIGuid, &mut *mut c_void) -> EFIStatus,
     pc_handle_protocol_fn: usize,
     register_protocol_notify_fn: usize,
     locate_handle_fn: usize,
