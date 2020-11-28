@@ -4,3 +4,4 @@ kernel=potato_example.kern
 
 [kernel]
 wooh="Hello World"
+lel=123

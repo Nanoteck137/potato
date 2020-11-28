@@ -6,16 +6,20 @@
 extern crate rlibc;
 #[macro_use] extern crate alloc;
 extern crate uefi;
+extern crate option_parser;
 
 use uefi::{ EFIHandle, EFIStatus, SimpleTextOutputInterface };
 use uefi::{ SystemTable, MemoryDescriptor };
 use uefi::{ EFILoadedImageProtocol, EFISimpleFilesystem };
 use uefi::{ LOADED_IMAGE_GUID, SIMPLE_FILESYSTEM_GUID };
 
+use option_parser::{ OptionParser, Category };
+
 use core::panic::PanicInfo;
 
 use alloc::alloc::{GlobalAlloc, Layout};
 use alloc::vec::Vec;
+use alloc::string::{ String, ToString };
 
 struct TextWriter<'a> {
     output: &'a SimpleTextOutputInterface,
@@ -93,7 +97,8 @@ unsafe impl GlobalAlloc for Allocator {
     unsafe fn alloc(&self, layout: Layout) -> *mut u8 {
         // println!("[DEBUG]: Allocate {} bytes", layout.size());
         let mut buffer = core::ptr::null_mut();
-        TABLE.unwrap().boot_services.allocate_pool(4, layout.size(), &mut buffer);
+        TABLE.unwrap()
+            .boot_services.allocate_pool(4, layout.size(), &mut buffer);
 
         buffer
     }
@@ -112,7 +117,8 @@ fn alloc_error_handler(layout: Layout) -> ! {
     panic!("allocation error: {:?}", layout)
 }
 
-fn loaded_image<'a>(table: &SystemTable, handle: EFIHandle) -> &'a EFILoadedImageProtocol<'a> {
+fn loaded_image<'a>(table: &SystemTable,
+                    handle: EFIHandle) -> &'a EFILoadedImageProtocol<'a> {
 
     let mut loaded_image_ptr = core::ptr::null_mut();
     let status = unsafe {
@@ -168,6 +174,21 @@ fn load_file(handle: EFIHandle, filename: &str) -> Option<Vec<u8>> {
     let file_content = file_handle.read_to_buffer();
 
     Some(file_content)
+}
+
+#[derive(Debug)]
+struct BootloaderOptions {
+    kernel_font: String,
+    kernel_filename: String,
+}
+
+impl Default for BootloaderOptions {
+    fn default() -> Self {
+        Self {
+            kernel_font: "font.fnt".to_string(),
+            kernel_filename: "kernel.kern".to_string(),
+        }
+    }
 }
 
 #[no_mangle]
@@ -239,8 +260,62 @@ fn efi_main(image_handle: EFIHandle,
     println!("Loading: {}", filename);
 
     let buffer = load_file(image_handle, filename).unwrap();
-    // println!("Buffer: {:?}", buffer);
-    println!("Text:\n{}", core::str::from_utf8(&buffer[..]).unwrap());
+    let option_str = core::str::from_utf8(&buffer[..]).unwrap();
+    println!("Text:\n{}", option_str);
+
+    let mut bootloader_options = BootloaderOptions::default();
+
+    let mut buffer = [0u8; 2048];
+    let mut index = 0;
+
+    let option_parser = OptionParser::new(option_str);
+    option_parser.options(|category, key, value| {
+        println!("'{:?}': {:?} = {:?}", category, key, value);
+
+        if category == Category::Bootloader {
+            match key {
+                "load_font" =>
+                    bootloader_options.kernel_font = value.to_string(),
+                "kernel" =>
+                    bootloader_options.kernel_filename = value.to_string(),
+                _ => {
+                    panic!("Unknown option: '{}'", key);
+                }
+            }
+        } else if category == Category::Kernel {
+            buffer[index..index+key.len()].clone_from_slice(&key.as_bytes()[..]);
+            index += key.len();
+
+            buffer[index] = b'=';
+            index += 1;
+
+            if value.as_bytes()[0] == b'\"' {
+                buffer[index..index+value.len()]
+                    .clone_from_slice(&value.as_bytes()[..]);
+                index += value.len();
+            } else {
+                buffer[index] = b'\"';
+                index += 1;
+
+                buffer[index..index+value.len()]
+                    .clone_from_slice(&value.as_bytes()[..]);
+                index += value.len();
+
+                buffer[index] = b'\"';
+                index += 1;
+            }
+
+            buffer[index] = b' ';
+            index += 1;
+        } else {
+            panic!("Unknown category: {:?}", category);
+        }
+
+        Some(())
+    }).unwrap();
+
+    println!("Bootloader Options: {:#?}", bootloader_options);
+    println!("Kernel Options: {}", core::str::from_utf8(&buffer[0..index]).unwrap());
 
     /*
     let kernel_options = load_kernel_options();
