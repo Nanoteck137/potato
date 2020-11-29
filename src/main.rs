@@ -1,4 +1,4 @@
-#![feature(panic_info_message, alloc_error_handler)]
+#![feature(asm, panic_info_message, alloc_error_handler)]
 
 #![no_std]
 #![no_main]
@@ -291,8 +291,8 @@ fn efi_main(image_handle: EFIHandle,
 
     for entry in memory_map.entries() {
         if entry.memory_type == EFIMemoryType::ConventionalMemory ||
-            // entry.memory_type == EFIMemoryType::LoaderCode ||
-            // entry.memory_type == EFIMemoryType::LoaderData ||
+            entry.memory_type == EFIMemoryType::LoaderCode ||
+            entry.memory_type == EFIMemoryType::LoaderData ||
             entry.memory_type == EFIMemoryType::BootServicesCode ||
             entry.memory_type == EFIMemoryType::BootServicesData
         {
@@ -303,16 +303,30 @@ fn efi_main(image_handle: EFIHandle,
             print!("[0x{:016x}-0x{:016x}] ", start, end);
 
             if size > 1024 * 1024 {
-                print!("{:>4} MiB ({:>10} B)", size / 1024 / 1024, size);
+                print!("{:>4} MiB", size / 1024 / 1024);
+                // print!(" ({:>10} B)", size);
             } else if size > 1024 {
-                print!("{:>4} KiB ({:>10} B)", size / 1024, size);
+                print!("{:>4} KiB", size / 1024);
+                // print!(" ({:>10} B)", size);
             } else {
                 print!("{:>4} B", size);
             }
 
+            print!(" : {:?}", entry.memory_type);
+
             println!();
         }
     }
+
+    let mut x = 0u64;
+    unsafe {
+        asm!("mov {}, cr3", out(reg) x);
+    }
+
+    println!("CR3: {:#x}", x);
+
+    let page = x as *const [u64; 4096];
+    // println!("{:x?}", *page);
 
     /*
     exit_boot_services();
