@@ -1,6 +1,9 @@
 #![no_std]
 #![allow(dead_code)]
 
+pub mod graphics;
+pub mod fs;
+
 #[macro_use] extern crate bitflags;
 #[macro_use] extern crate alloc;
 
@@ -11,6 +14,7 @@ use alloc::vec::Vec;
 pub type EFIHandle = usize;
 
 #[derive(Clone, Copy, Debug)]
+#[repr(C)]
 pub struct PhysicalAddress(pub u64);
 
 #[derive(Clone, Copy, Debug)]
@@ -100,9 +104,6 @@ pub struct EFILoadedImageProtocol<'a> {
     unload_fn: usize,
 }
 
-pub const SIMPLE_FILESYSTEM_GUID: EFIGuid = EFIGuid { data1: 0x964e5b22, data2: 0x6459, data3: 0x11d2, data4: [0x8e, 0x39, 0x0, 0xa0, 0xc9, 0x69, 0x72, 0x3b] };
-pub const GET_INFO_GUID: EFIGuid = EFIGuid { data1: 0x09576e92, data2: 0x6d3f, data3: 0x11d2, data4: [0x8e, 0x39, 0x00, 0xa0, 0xc9, 0x69, 0x72, 0x3b] };
-
 #[repr(C)]
 #[derive(Copy, Clone, Debug)]
 pub struct EFITime {
@@ -119,196 +120,6 @@ pub struct EFITime {
     pad2: u8,
 }
 
-#[repr(C)]
-#[derive(Copy, Clone, Debug)]
-pub struct EFIFileInfo {
-    size: u64,
-    pub file_size: u64,
-    pub physical_size: u64,
-    pub create_time: EFITime,
-    pub last_access_time: EFITime,
-    pub modification_time: EFITime,
-    pub attribute: u64,
-
-    // NOTE(patrik): MISSING FILENAME
-}
-
-#[repr(C)]
-pub struct EFIFileHandle {
-    revision: u64,
-
-    open_fn: unsafe fn(this: &EFIFileHandle, new_handle: &mut *mut EFIFileHandle, filename: *const u16, open_mode: u64, attributes: u64) -> EFIStatus,
-    close_fn: usize,
-    delete_fn: usize,
-    pub read_fn: unsafe fn(this: &EFIFileHandle, buffer_size: &mut u64, buffer: *mut u8) -> EFIStatus,
-    write_fn: usize,
-    get_position_fn: usize,
-    set_position_fn: usize,
-    get_info_fn: unsafe fn(this: &EFIFileHandle, infomation_type: &EFIGuid, buffer_size: &mut u64, buffer: *mut u8) -> EFIStatus,
-    set_info_fn: usize,
-    flush_fn: usize,
-    open_ex_fn: usize,
-    read_ex_fn: usize,
-    write_ex_fn: usize,
-    flush_ex_fn: usize,
-}
-
-impl EFIFileHandle {
-    pub fn open<'a>(&self, filename: &str,
-                    open_mode: u64, attribute: u64)
-        -> &'a EFIFileHandle
-    {
-        let mut filename_buffer = [0u16; 1024];
-
-        let mut index = 0;
-        for c in filename.bytes() {
-            filename_buffer[index] = c as u16;
-            index += 1;
-        }
-
-        filename_buffer[index] = 0u16;
-
-        let mut handle_ptr = core::ptr::null_mut();
-        let status = unsafe {
-            (self.open_fn)(self, &mut handle_ptr,
-                            filename_buffer.as_ptr(), open_mode, attribute)
-        };
-
-        if status != EFIStatus::Success {
-            panic!("'EFIFileHandle' failed to open '{}' error: {:?}",
-                   filename, status)
-        }
-
-        let handle = unsafe { &*handle_ptr };
-
-        handle
-    }
-
-    pub fn read_to_buffer(&self) -> alloc::vec::Vec<u8> {
-        let file_info = self.get_info();
-        let mut buffer = vec![0u8; file_info.file_size as usize];
-
-        let mut read_size = file_info.file_size;
-        let status = unsafe {
-            (self.read_fn)(self, &mut read_size,
-                           buffer.as_mut_ptr())
-        };
-
-        if status != EFIStatus::Success {
-            panic!("'EFIFileHandle::read_to_buffer' failed to read error: {:?}",
-                   status);
-        }
-
-        buffer
-    }
-
-    pub fn get_info(&self) -> EFIFileInfo {
-        let mut buffer_size = 0u64;
-        let status = unsafe {
-            (self.get_info_fn)(self,
-                               &GET_INFO_GUID,
-                               &mut buffer_size,
-                               core::ptr::null_mut())
-        };
-
-        if status != EFIStatus::BufferTooSmall {
-            panic!("'EFIFileHandle::get_info' expected BufferTooSmall got {:?}",
-                   status);
-        }
-
-        let mut buffer = vec![0u8; buffer_size as usize];
-        let buffer_ptr = buffer.as_mut_ptr();
-
-        let status = unsafe {
-            (self.get_info_fn)(self,
-                               &GET_INFO_GUID,
-                               &mut buffer_size,
-                               buffer_ptr)
-        };
-
-        if status != EFIStatus::Success {
-            panic!("'EFIFIleHandle::get_info' error: {:?}", status);
-        }
-
-        let file_info = unsafe { *(buffer.as_ptr() as *const EFIFileInfo) };
-
-        file_info
-    }
-}
-
-#[repr(C)]
-pub struct EFISimpleFilesystem {
-    revision: u64,
-    open_volume_fn: unsafe fn(&EFISimpleFilesystem, &mut *mut EFIFileHandle) -> EFIStatus,
-}
-
-impl EFISimpleFilesystem {
-    pub fn open_volume<'a>(&self) -> &'a EFIFileHandle {
-        let mut handle_ptr = core::ptr::null_mut();
-
-        let status = unsafe {
-            (self.open_volume_fn)(self, &mut handle_ptr)
-        };
-
-        if status != EFIStatus::Success {
-            panic!("'EFISimpleFilesystem::open_volume' failed to open root volume - error: {:?}", status);
-        }
-
-        let handle = unsafe { &*handle_ptr };
-
-        handle
-    }
-}
-
-pub const GRAPHICS_OUTPUT_PROTOCOL_GUID: EFIGuid = EFIGuid { data1: 0x9042a9de, data2: 0x23dc, data3: 0x4a38, data4: [0x96, 0xfb, 0x7a, 0xde, 0xd0, 0x80, 0x51, 0x6a] };
-
-#[derive(PartialEq, Copy, Clone, Debug)]
-#[repr(C)]
-pub enum EFIGraphicsPixelFormat {
-    PixelRedGreenBlueReserved8BitPerColor,
-    PixelBlueGreenRedReserved8BitPerColor,
-    PixelBitMask,
-    PixelBltOnly,
-    PixelFormatMax
-}
-
-#[derive(Copy, Clone, Debug)]
-#[repr(C)]
-pub struct EFIGraphicsPixelInfomation {
-    red_mask: u32,
-    green_mask: u32,
-    blue_mask: u32,
-    reserved_mask: u32,
-}
-
-#[derive(Debug)]
-#[repr(C)]
-pub struct EFIGraphicsOutputInfo {
-    version: u32,
-    width: u32,
-    height: u32,
-    pixel_format: EFIGraphicsPixelFormat,
-    pixel_infomation: EFIGraphicsPixelInfomation,
-    pixels_per_scanline: u32,
-}
-
-#[repr(C)]
-pub struct EFIGraphicsOutputMode<'a> {
-    max_mode: u32,
-    mode: u32,
-    pub info: &'a EFIGraphicsOutputInfo,
-    size_of_info: u64,
-    pub framebuffer_base: PhysicalAddress,
-    pub framebuffer_size: u64,
-}
-
-#[repr(C)]
-pub struct EFIGraphicsOutputProtocol<'a> {
-    query_mode: usize,
-    set_mode: usize,
-    blt: usize,
-    pub mode: &'a EFIGraphicsOutputMode<'a>,
-}
 
 #[repr(C)]
 pub struct SimpleTextOutputInterface {

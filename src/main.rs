@@ -9,17 +9,19 @@ extern crate uefi;
 extern crate option_parser;
 
 use uefi::{ EFIHandle, EFIMemoryType, SimpleTextOutputInterface };
-use uefi::{ SystemTable, EFIGraphicsOutputProtocol };
-use uefi::{ EFILoadedImageProtocol, EFISimpleFilesystem, EFIFileHandle };
-use uefi::{ LOADED_IMAGE_GUID, SIMPLE_FILESYSTEM_GUID, GRAPHICS_OUTPUT_PROTOCOL_GUID };
+use uefi::{ EFILoadedImageProtocol, LOADED_IMAGE_GUID };
+use uefi::{ SystemTable };
+
+use uefi::graphics::{ EFIGraphicsOutputProtocol, GRAPHICS_OUTPUT_PROTOCOL_GUID };
+use uefi::fs::{ EFISimpleFilesystem, EFIFileHandle, SIMPLE_FILESYSTEM_GUID };
 
 use option_parser::{ OptionParser, Category };
 
 use core::panic::PanicInfo;
 
-use alloc::alloc::{GlobalAlloc, Layout};
-use alloc::vec::Vec;
+use alloc::alloc::{ GlobalAlloc, Layout };
 use alloc::string::{ String, ToString };
+use alloc::vec::Vec;
 
 struct TextWriter<'a> {
     output: &'a SimpleTextOutputInterface,
