@@ -9,9 +9,9 @@ extern crate uefi;
 extern crate option_parser;
 
 use uefi::{ EFIHandle, EFIMemoryType, SimpleTextOutputInterface };
-use uefi::{ SystemTable, MemoryDescriptor };
+use uefi::{ SystemTable, EFIGraphicsOutputProtocol };
 use uefi::{ EFILoadedImageProtocol, EFISimpleFilesystem, EFIFileHandle };
-use uefi::{ LOADED_IMAGE_GUID, SIMPLE_FILESYSTEM_GUID };
+use uefi::{ LOADED_IMAGE_GUID, SIMPLE_FILESYSTEM_GUID, GRAPHICS_OUTPUT_PROTOCOL_GUID };
 
 use option_parser::{ OptionParser, Category };
 
@@ -327,6 +327,13 @@ fn efi_main(image_handle: EFIHandle,
 
     let page = x as *const [u64; 4096];
     // println!("{:x?}", *page);
+
+    let ptr = table.boot_services.locate_protocol(&GRAPHICS_OUTPUT_PROTOCOL_GUID);
+    let gop = ptr as *const EFIGraphicsOutputProtocol;
+    let gop = unsafe { &*gop };
+
+    println!("Framebuffer Size: {}", gop.mode.framebuffer_size);
+    println!("Framebuffer Info: {:#?}", gop.mode.info);
 
     /*
     exit_boot_services();
