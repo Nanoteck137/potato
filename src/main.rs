@@ -8,12 +8,13 @@ extern crate rlibc;
 extern crate uefi;
 extern crate option_parser;
 
-use uefi::{ EFIHandle, EFIMemoryType, SimpleTextOutputInterface };
+use uefi::{ EFIHandle, SimpleTextOutputInterface };
 use uefi::{ EFILoadedImageProtocol, LOADED_IMAGE_GUID };
 use uefi::{ SystemTable };
 
 use uefi::graphics::{ EFIGraphicsOutputProtocol, GRAPHICS_OUTPUT_PROTOCOL_GUID };
 use uefi::fs::{ EFISimpleFilesystem, EFIFileHandle, SIMPLE_FILESYSTEM_GUID };
+use uefi::memory::{ EFIMemoryType };
 
 use option_parser::{ OptionParser, Category };
 
@@ -79,6 +80,7 @@ static mut TABLE: Option<SystemTable<'static>> = None;
 macro_rules! print {
     ($($arg:tt)*) => ({
         use core::fmt::Write;
+
         unsafe {
             match WRITER.as_mut() {
                 Some(w) => w.write_fmt(format_args!($($arg)*)).unwrap(),
@@ -326,9 +328,6 @@ fn efi_main(image_handle: EFIHandle,
     }
 
     println!("CR3: {:#x}", x);
-
-    let page = x as *const [u64; 4096];
-    // println!("{:x?}", *page);
 
     let ptr =
         table.boot_services.locate_protocol(&GRAPHICS_OUTPUT_PROTOCOL_GUID);
