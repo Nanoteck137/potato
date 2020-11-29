@@ -1,7 +1,16 @@
 use crate::{ EFIGuid, PhysicalAddress };
 
-pub const GRAPHICS_OUTPUT_PROTOCOL_GUID: EFIGuid = EFIGuid { data1: 0x9042a9de, data2: 0x23dc, data3: 0x4a38, data4: [0x96, 0xfb, 0x7a, 0xde, 0xd0, 0x80, 0x51, 0x6a] };
+// GUID for the GraphicsOutputProtocol (GOP)
+pub const GRAPHICS_OUTPUT_PROTOCOL_GUID: EFIGuid =
+    EFIGuid {
+        data1: 0x9042a9de,
+        data2: 0x23dc,
+        data3: 0x4a38,
+        data4: [0x96, 0xfb, 0x7a, 0xde, 0xd0, 0x80, 0x51, 0x6a]
+    };
 
+/// Pixel formats describes how the pixels should be encoded in the framebuffer
+/// TODO(patrik): Change the name
 #[derive(PartialEq, Copy, Clone, Debug)]
 #[repr(C)]
 pub enum EFIGraphicsPixelFormat {
@@ -12,6 +21,7 @@ pub enum EFIGraphicsPixelFormat {
     PixelFormatMax
 }
 
+/// Infomation about each color channel in a single pixel
 #[derive(Copy, Clone, Debug)]
 #[repr(C)]
 pub struct EFIGraphicsPixelInfomation {
@@ -21,6 +31,8 @@ pub struct EFIGraphicsPixelInfomation {
     reserved_mask: u32,
 }
 
+/// Infomation about the framebuffer
+/// i.e the width, the height, how the pixels should be encoded and more
 #[derive(Debug)]
 #[repr(C)]
 pub struct EFIGraphicsOutputInfo {
@@ -32,6 +44,8 @@ pub struct EFIGraphicsOutputInfo {
     pixels_per_scanline: u32,
 }
 
+/// The mode the GOP is in, it contains the framebuffer base address
+/// and infomation about the framebuffer
 #[repr(C)]
 pub struct EFIGraphicsOutputMode<'a> {
     max_mode: u32,
@@ -42,6 +56,8 @@ pub struct EFIGraphicsOutputMode<'a> {
     pub framebuffer_size: u64,
 }
 
+/// The GraphicsOutputProtocol handle have function pointers to
+/// muniplulate the framebuffer and ways to get the current framebuffer
 #[repr(C)]
 pub struct EFIGraphicsOutputProtocol<'a> {
     query_mode: usize,

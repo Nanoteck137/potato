@@ -330,7 +330,8 @@ fn efi_main(image_handle: EFIHandle,
     let page = x as *const [u64; 4096];
     // println!("{:x?}", *page);
 
-    let ptr = table.boot_services.locate_protocol(&GRAPHICS_OUTPUT_PROTOCOL_GUID);
+    let ptr =
+        table.boot_services.locate_protocol(&GRAPHICS_OUTPUT_PROTOCOL_GUID);
     let gop = ptr as *const EFIGraphicsOutputProtocol;
     let gop = unsafe { &*gop };
 

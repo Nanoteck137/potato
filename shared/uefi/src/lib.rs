@@ -4,6 +4,7 @@
 pub mod graphics;
 pub mod fs;
 
+/// External crates this library uses
 #[macro_use] extern crate bitflags;
 #[macro_use] extern crate alloc;
 
@@ -11,16 +12,21 @@ use core::ffi::c_void;
 
 use alloc::vec::Vec;
 
+/// Declare a EFIHandle type that should be a pointer size
 pub type EFIHandle = usize;
 
+/// A struct to represents a PhysicalAddress
 #[derive(Clone, Copy, Debug)]
 #[repr(C)]
 pub struct PhysicalAddress(pub u64);
 
+/// A struct to represents a VirtualAddress
 #[derive(Clone, Copy, Debug)]
 #[repr(C)]
 pub struct VirtualAddress(pub u64);
 
+/// EFIStatus used for most of the UEFI API calls to retrive a status,
+/// and this enum has most of the warnings and errors that UEFI can report
 #[derive(PartialEq, Debug)]
 #[repr(u64)]
 #[allow(dead_code)]
@@ -65,6 +71,7 @@ pub enum EFIStatus {
     CompromisedData     = 0x8000000000000000 | 33,
 }
 
+// Represents a UEFI Guid used for protocols mostly
 #[repr(C)]
 pub struct EFIGuid {
     data1: u32,
@@ -73,6 +80,7 @@ pub struct EFIGuid {
     data4: [u8; 8],
 }
 
+/// GUID for the LoadedImage Protocol
 pub const LOADED_IMAGE_GUID: EFIGuid = EFIGuid { data1: 0x5B1B31A1, data2: 0x9562, data3: 0x11d2, data4: [0x8E, 0x3F, 0x00, 0xA0, 0xC9, 0x69, 0x72, 0x3B] };
 
 #[repr(C)]
@@ -83,6 +91,8 @@ pub struct EFIDevicePathProtocol {
     length: [u8; 2],
 }
 
+/// LoadedImage protocol has functions to get infomation about a image
+/// TODO(patrik): Wrappers and remove pub
 #[repr(C)]
 pub struct EFILoadedImageProtocol<'a> {
     pub revision: u32,
@@ -104,6 +114,7 @@ pub struct EFILoadedImageProtocol<'a> {
     unload_fn: usize,
 }
 
+/// A struct to represent time, used for mostly for files
 #[repr(C)]
 #[derive(Copy, Clone, Debug)]
 pub struct EFITime {
@@ -120,7 +131,7 @@ pub struct EFITime {
     pad2: u8,
 }
 
-
+// A interface to output text to a output interface like the console or serial
 #[repr(C)]
 pub struct SimpleTextOutputInterface {
     reset_fn: usize,
@@ -140,15 +151,34 @@ pub struct SimpleTextOutputInterface {
 }
 
 impl SimpleTextOutputInterface {
-    pub unsafe fn output_string(&self, bytes: &[u16]) {
-        (self.output_string_fn)(self, bytes.as_ptr());
+    /// Output characters on the interface
+    pub fn output_string(&self, bytes: &[u16]) {
+        // Output the bytes to the interface
+        let status = unsafe {
+            (self.output_string_fn)(self, bytes.as_ptr())
+        };
+
+        // Check the status for success
+        if status != EFIStatus::Success {
+            // TODO(patrik): Remove panic
+            panic!("Failed to output_string");
+        }
     }
 
-    pub unsafe fn clear_screen(&self) {
-        (self.clear_screen_fn)(self);
+    /// Clear the screen
+    pub fn clear_screen(&self) {
+        // Issue the clear command
+        let status = unsafe {
+            (self.clear_screen_fn)(self)
+        };
+
+        if status != EFIStatus::Success {
+            panic!("Failed to clear the screen");
+        }
     }
 }
 
+/// TableHeader for the SystemTable and BootServices
 #[repr(C)]
 #[derive(Clone, Copy, Debug)]
 struct TableHeader {
@@ -159,6 +189,8 @@ struct TableHeader {
     reserved: u32,
 }
 
+/// Flags for the memory attributes
+/// TODO(patrik): Change the names
 bitflags! {
     pub struct EFIMemoryAttribute: u64 {
         const NONE          = 0x0000000000000000;
@@ -179,6 +211,7 @@ bitflags! {
     }
 }
 
+/// Memory Types
 #[derive(PartialEq, Clone, Copy, Debug)]
 #[repr(C)]
 #[allow(dead_code)]
@@ -200,6 +233,8 @@ pub enum EFIMemoryType {
     PersistentMemory        = 0x0000000e,
 }
 
+/// Memory Descritptor represents a chunk of memory with some infomation
+/// like the type, start address and more
 #[repr(C)]
 #[derive(Clone, Copy, Debug)]
 pub struct MemoryDescriptor {
@@ -211,6 +246,7 @@ pub struct MemoryDescriptor {
     pub attribute: EFIMemoryAttribute,
 }
 
+/// A Iterator for the memory map
 pub struct EFIMemoryMapIterator<'a> {
     buffer: &'a [u8],
 
@@ -222,14 +258,22 @@ pub struct EFIMemoryMapIterator<'a> {
 impl<'a> Iterator for EFIMemoryMapIterator<'a> {
     type Item = MemoryDescriptor;
 
+    /// Get the next memory entry from the map
     fn next(&mut self) -> Option<MemoryDescriptor> {
+        // Check if we are in range
         if self.index < self.num_entries {
             unsafe {
+                // Calculate the offset inside the map we are
+                // and get the pointer for that entry
                 let ptr = self.buffer.as_ptr().offset((self.index * self.entry_size) as isize);
+
+                // Cast the pointer to a memory descriptor
                 let ptr = ptr as *const MemoryDescriptor;
 
+                // Increment the index
                 self.index += 1;
 
+                // Return a copy of the descriptor
                 return Some(*ptr);
             }
         }
@@ -238,7 +282,7 @@ impl<'a> Iterator for EFIMemoryMapIterator<'a> {
     }
 }
 
-
+/// Represents a memory map
 #[derive(Debug)]
 pub struct EFIMemoryMap {
     buffer: Vec<u8>,
@@ -249,6 +293,7 @@ pub struct EFIMemoryMap {
 }
 
 impl<'a> EFIMemoryMap {
+    /// Create a memory map
     fn new(buffer: Vec<u8>, map_size: u64, entry_size: u64, map_key: u64)
         -> Self
     {
@@ -260,6 +305,8 @@ impl<'a> EFIMemoryMap {
         }
     }
 
+    /// Return a new iterator for the memory map
+    /// NOTE(patrik): Can be called multiple times
     pub fn entries(&self) -> EFIMemoryMapIterator {
         let num_entries = (self.map_size / self.entry_size) as usize;
         let entry_size = self.entry_size as usize;
@@ -273,8 +320,9 @@ impl<'a> EFIMemoryMap {
     }
 }
 
-#[repr(C)]
+/// All the function pointers for the BootServices
 #[derive(Clone, Copy)]
+#[repr(C)]
 pub struct BootServices {
     header: TableHeader,
 
@@ -283,7 +331,7 @@ pub struct BootServices {
 
     allocate_pages_fn: usize,
     free_pages_fn: usize,
-    pub get_memory_map_fn: unsafe fn(&mut u64, *mut MemoryDescriptor,
+    get_memory_map_fn: unsafe fn(&mut u64, *mut MemoryDescriptor,
                                  &mut u64, &mut u64, &mut u32) -> EFIStatus,
     allocate_pool_fn: unsafe fn(EFIMemoryType, u64, &mut *mut u8) -> EFIStatus,
     free_pool_fn: unsafe fn(*mut u8) -> EFIStatus,
@@ -299,7 +347,7 @@ pub struct BootServices {
     reinstall_protocol_interface_fn: usize,
     uninstall_protocol_interface_fn: usize,
 
-    pub handle_protocol_fn: unsafe fn(EFIHandle, &EFIGuid, &mut *mut c_void) -> EFIStatus,
+    handle_protocol_fn: unsafe fn(EFIHandle, &EFIGuid, &mut *mut c_void) -> EFIStatus,
     pc_handle_protocol_fn: usize,
     register_protocol_notify_fn: usize,
     locate_handle_fn: usize,
@@ -337,18 +385,24 @@ pub struct BootServices {
 }
 
 impl BootServices {
+    /// A Function to allocate from a pool selected by the ´memory_type´
+    /// TODO(patrik): Return the pointer insteed
     pub fn allocate_pool(&self, memory_type: EFIMemoryType,
                          size: usize, buffer: &mut *mut u8)
     {
+        // Allocate the memory
         let status = unsafe {
             (self.allocate_pool_fn)(memory_type, size as u64, buffer)
         };
 
+        // Check the status
         if status != EFIStatus::Success {
+            // TODO(patrik): Remove the panic
             panic!("Failed to allocate from pool: {:?}", memory_type);
         }
     }
 
+    /// Free the memory allocated from a pool
     pub fn free_pool(&self, buffer: *mut u8) {
         let status = unsafe {
             (self.free_pool_fn)(buffer)
@@ -359,42 +413,59 @@ impl BootServices {
         }
     }
 
+    /// Handles a protocol and returns the handle pointer
     pub fn handle_protocol(&self, handle: EFIHandle, guid: &EFIGuid)
         -> *mut c_void
     {
+        // Pointer for the handle
         let mut ptr = core::ptr::null_mut();
+
+        // Get the handle to the protocol
         let status = unsafe {
             (self.handle_protocol_fn)(handle, guid, &mut ptr)
         };
 
+        // Check the status
         if status != EFIStatus::Success {
             // TODO(patrik): Print the guid
+            // TODO(patrik): Remove the panic
             panic!("Failed to handle protocol");
         }
 
+        // Return the handle
         ptr
     }
 
+    /// Locate a protocol
     pub fn locate_protocol(&self, protocol: &EFIGuid) -> *mut c_void {
+        // Pointer to the protocol
         let mut ptr = core::ptr::null_mut();
+
+        // Get the handle to protocol
         let status = unsafe {
             (self.locate_protocol_fn)(protocol, core::ptr::null_mut(), &mut ptr)
         };
 
+        // Check the status
         if status != EFIStatus::Success {
             // TODO(patrik): Print the guid
+            // TODO(patrik): Remove the panic
             panic!("Failed to locate protocol");
         }
 
+        // Return the handle
         ptr
     }
 
+    /// Get a memory map
     pub fn get_memory_map(&self) -> EFIMemoryMap {
+        // Create some variables that the memory map call gives us
         let mut map_size = 0;
         let mut map_key = 0;
         let mut entry_size = 0;
         let mut entry_version = 0;
 
+        // Get some infomation about the memory
         let _status = unsafe {
             (self.get_memory_map_fn)(
                 &mut map_size,
@@ -405,9 +476,12 @@ impl BootServices {
             )
         };
 
-        let size = map_size;
-        let mut buffer = vec![0u8; size as usize];
+        // TODO(patrik): Check the status
 
+        // Allocate a buffer to hold the memory map
+        let mut buffer = vec![0u8; map_size as usize];
+
+        // Get a pointer to the buffer
         let ptr = buffer.as_mut_ptr() as *mut MemoryDescriptor;
 
         let mut map_size = buffer.len() as u64;
@@ -415,6 +489,7 @@ impl BootServices {
         let mut entry_size = 0;
         let mut entry_version = 0;
 
+        // Get the memory map and put it in the buffer
         let status = unsafe {
             (self.get_memory_map_fn)(
                 &mut map_size,
@@ -425,10 +500,17 @@ impl BootServices {
             )
         };
 
+        if status != EFIStatus::Success {
+            panic!("Failed to retrive the memory map");
+        }
+
+        // Return a instance of a memory map struct
         EFIMemoryMap::new(buffer, map_size, entry_size, map_key)
     }
 }
 
+/// A SystemTable is what UEFI gives you when you first boot and it have
+/// all the functions and infomation to boot the OS
 #[repr(C)]
 #[derive(Clone, Copy)]
 pub struct SystemTable<'a> {
