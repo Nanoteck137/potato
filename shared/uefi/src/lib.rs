@@ -6,6 +6,8 @@
 
 use core::ffi::c_void;
 
+use alloc::vec::Vec;
+
 pub type EFIHandle = usize;
 
 #[derive(PartialEq, Debug)]
@@ -347,6 +349,68 @@ pub struct MemoryDescriptor {
     pub attribute: EFIMemoryAttribute,
 }
 
+pub struct EFIMemoryMapIterator<'a> {
+    buffer: &'a [u8],
+
+    entry_size: usize,
+    num_entries: usize,
+    index: usize
+}
+
+impl<'a> Iterator for EFIMemoryMapIterator<'a> {
+    type Item = MemoryDescriptor;
+
+    fn next(&mut self) -> Option<MemoryDescriptor> {
+        if self.index < self.num_entries {
+            unsafe {
+                let ptr = self.buffer.as_ptr().offset((self.index * self.entry_size) as isize);
+                let ptr = ptr as *const MemoryDescriptor;
+
+                self.index += 1;
+
+                return Some(*ptr);
+            }
+        }
+
+        None
+    }
+}
+
+
+#[derive(Debug)]
+pub struct EFIMemoryMap {
+    buffer: Vec<u8>,
+
+    map_size: u64,
+    entry_size: u64,
+    map_key: u64,
+}
+
+impl<'a> EFIMemoryMap {
+    fn new(buffer: Vec<u8>, map_size: u64, entry_size: u64, map_key: u64)
+        -> Self
+    {
+        Self {
+            buffer,
+            map_size,
+            entry_size,
+            map_key
+        }
+    }
+
+    pub fn entries(&self) -> EFIMemoryMapIterator {
+        let num_entries = (self.map_size / self.entry_size) as usize;
+        let entry_size = self.entry_size as usize;
+
+        EFIMemoryMapIterator {
+            buffer: &self.buffer,
+            entry_size: entry_size,
+            num_entries,
+            index: 0
+        }
+    }
+}
+
 #[repr(C)]
 #[derive(Clone, Copy)]
 pub struct BootServices {
@@ -447,6 +511,45 @@ impl BootServices {
         }
 
         ptr
+    }
+
+    pub fn get_memory_map(&self) -> EFIMemoryMap {
+        let mut map_size = 0;
+        let mut map_key = 0;
+        let mut entry_size = 0;
+        let mut entry_version = 0;
+
+        let _status = unsafe {
+            (self.get_memory_map_fn)(
+                &mut map_size,
+                core::ptr::null_mut(),
+                &mut map_key,
+                &mut entry_size,
+                &mut entry_version,
+            )
+        };
+
+        let size = map_size;
+        let mut buffer = vec![0u8; size as usize];
+
+        let ptr = buffer.as_mut_ptr() as *mut MemoryDescriptor;
+
+        let mut map_size = buffer.len() as u64;
+        let mut map_key = 0;
+        let mut entry_size = 0;
+        let mut entry_version = 0;
+
+        let status = unsafe {
+            (self.get_memory_map_fn)(
+                &mut map_size,
+                ptr,
+                &mut map_key,
+                &mut entry_size,
+                &mut entry_version,
+            )
+        };
+
+        EFIMemoryMap::new(buffer, map_size, entry_size, map_key)
     }
 }
 

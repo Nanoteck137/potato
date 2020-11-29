@@ -95,7 +95,7 @@ struct Allocator;
 
 unsafe impl GlobalAlloc for Allocator {
     unsafe fn alloc(&self, layout: Layout) -> *mut u8 {
-        // println!("[DEBUG]: Allocate {} bytes", layout.size());
+        println!("[DEBUG]: Allocate {} bytes", layout.size());
         let mut buffer = core::ptr::null_mut();
         TABLE.unwrap()
             .boot_services.allocate_pool(EFIMemoryType::BootServicesData,
@@ -104,8 +104,8 @@ unsafe impl GlobalAlloc for Allocator {
         buffer
     }
 
-    unsafe fn dealloc(&self, ptr: *mut u8, _layout: Layout) {
-        // println!("[DEBUG]: Deallocate {} bytes", layout.size());
+    unsafe fn dealloc(&self, ptr: *mut u8, layout: Layout) {
+        println!("[DEBUG]: Deallocate {} bytes", layout.size());
         TABLE.unwrap().boot_services.free_pool(ptr);
     }
 }
@@ -198,53 +198,8 @@ fn efi_main(image_handle: EFIHandle,
 
     println!("Welcome to the potato bootloader v0.1");
 
-    let mut map_size = 0;
-    let mut map_key = 0;
-    let mut entry_size = 0;
-    let mut entry_version = 0;
-
-    let _status = unsafe {
-        (table.boot_services.get_memory_map_fn)(
-            &mut map_size,
-            core::ptr::null_mut(),
-            &mut map_key,
-            &mut entry_size,
-            &mut entry_version,
-        )
-    };
-
-    let size = map_size;
-    let mut buffer = vec![0u8; size as usize];
-
-    let ptr = buffer.as_mut_ptr() as *mut MemoryDescriptor;
-
-    let mut map_size = buffer.len() as u64;
-    let mut map_key = 0;
-    let mut entry_size = 0;
-    let mut entry_version = 0;
-
-    let status = unsafe {
-        (table.boot_services.get_memory_map_fn)(
-            &mut map_size,
-            ptr,
-            &mut map_key,
-            &mut entry_size,
-            &mut entry_version,
-        )
-    };
-
-    println!("Status: {:?}", status);
-
-    let num_entries = map_size / entry_size;
-
-    println!("Num entries: {}", num_entries);
-
-    for i in 0..num_entries {
-        unsafe {
-            let ptr = buffer.as_ptr().offset((i * entry_size) as isize);
-            let _ptr = ptr as *const MemoryDescriptor;
-        }
-    }
+    let memory_map = table.boot_services.get_memory_map();
+    println!("Entry: {:#?}", memory_map.entries().nth(0).unwrap());
 
     // TODO(patrik): Load the kernel
 
