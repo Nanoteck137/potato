@@ -4,6 +4,31 @@
 ** [X] Move the EFI Stuff to a library
 ** TODO Wrap all the function pointers in a function wrapper
 ** TODO Cleanup the API
+*** TODO Cleanup the Interfaces
+**** TODO lib.rs
+**** TODO fs.rs
+**** TODO graphics.rs
+*** TODO Remove pub from stuff that don't need it
+**** TODO lib.rs
+**** TODO fs.rs
+**** TODO graphics.rs
+*** TODO 80 column
+**** TODO lib.rs
+**** TODO fs.rs
+**** TODO graphics.rs
+*** TODO Comments
+**** TODO lib.rs
+**** TODO fs.rs
+**** TODO graphics.rs
+*** TODO Struct Field alignment
+**** TODO lib.rs
+**** TODO fs.rs
+**** TODO graphics.rs
+*** TODO Remove panics and replace those with results or options
+**** TODO lib.rs
+**** TODO fs.rs
+**** TODO graphics.rs
+*** TODO Move stuff to files
 * Bootloader
 ** [X] File Loading
 ** [X] Option Parsing
