@@ -34,7 +34,7 @@ image: build
 	dd if=$(PART_IMAGE) of=$(UEFI_IMAGE) bs=512 count=91669 seek=2048 conv=notrunc
 
 run: 
-	qemu-system-x86_64 -drive file=$(UEFI_IMAGE) -m 256M -cpu qemu64 -drive if=pflash,format=raw,unit=0,file="$(OVMF_CODE_BIN)",readonly=on -drive if=pflash,format=raw,unit=1,file="$(OVMF_VARS_BIN)" -net none
+	qemu-system-x86_64 -drive file=$(UEFI_IMAGE) -m 1G -cpu qemu64 -drive if=pflash,format=raw,unit=0,file="$(OVMF_CODE_BIN)",readonly=on -drive if=pflash,format=raw,unit=1,file="$(OVMF_VARS_BIN)" -net none
 
 clean:
 	rm -rf obj/ target/ 

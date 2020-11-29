@@ -292,10 +292,10 @@ struct TableHeader {
 }
 
 #[derive(Clone, Copy, Debug)]
-pub struct PhysicalAddress(u64);
+pub struct PhysicalAddress(pub u64);
 
 #[derive(Clone, Copy, Debug)]
-pub struct VirtualAddress(u64);
+pub struct VirtualAddress(pub u64);
 
 bitflags! {
     pub struct EFIMemoryAttribute: u64 {

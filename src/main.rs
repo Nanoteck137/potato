@@ -289,8 +289,32 @@ fn efi_main(image_handle: EFIHandle,
     println!("Total Pages: {}", memory_size);
     println!("Total Memory: {} MiB", (memory_size * 4096) / 1024 / 1024);
 
+    for entry in memory_map.entries() {
+        if entry.memory_type == EFIMemoryType::ConventionalMemory ||
+            // entry.memory_type == EFIMemoryType::LoaderCode ||
+            // entry.memory_type == EFIMemoryType::LoaderData ||
+            entry.memory_type == EFIMemoryType::BootServicesCode ||
+            entry.memory_type == EFIMemoryType::BootServicesData
+        {
+            let start = entry.physical_start.0;
+            let end = (entry.physical_start.0 + entry.number_of_pages * 4096) - 1;
+            let size = end - start + 1;
+
+            print!("[0x{:016x}-0x{:016x}] ", start, end);
+
+            if size > 1024 * 1024 {
+                print!("{:>4} MiB ({:>10} B)", size / 1024 / 1024, size);
+            } else if size > 1024 {
+                print!("{:>4} KiB ({:>10} B)", size / 1024, size);
+            } else {
+                print!("{:>4} B", size);
+            }
+
+            println!();
+        }
+    }
+
     /*
-    let memory_map = table.boot_services.get_memory_map();
     exit_boot_services();
     call_kernel_entry(kernel);
     */
