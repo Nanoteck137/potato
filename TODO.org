@@ -1,13 +1,23 @@
 #+TITLE: Potato Bootloader TODO
 
 * EFI Interface
-** TODO Move the EFI Stuff to a library
+** [X] Move the EFI Stuff to a library
 ** TODO Wrap all the function pointers in a function wrapper
 ** TODO Cleanup the API
 * Bootloader
-** TODO File Loading
-** TODO Option Parsing
+** [X] File Loading
+** [X] Option Parsing
 ** TODO Load the font data for the kernel
 ** TODO Load the kernel
-** TODO Get the memory map
+*** TODO Find a format to use (ELF/PE+/BOTH)
+*** TODO Parse the kernel from the format and load it in to memory
+** TODO GOP (Graphics Output Protocol)
+*** TODO Get the framebuffer
+*** TODO Create an API for the Kernel to use the framebuffer
+*** TODO Respect the pixel format and pack the pixels in the right order
+** [X] Get the memory map
 ** TODO Enter the kernel
+*** TODO Pass the Memory map
+*** TODO Pass the Framebuffer
+*** TODO Pass the Font data
+*** TODO Pass the Options
