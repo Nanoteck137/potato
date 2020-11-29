@@ -8,9 +8,9 @@ extern crate rlibc;
 extern crate uefi;
 extern crate option_parser;
 
-use uefi::{ EFIHandle, EFIStatus, SimpleTextOutputInterface };
+use uefi::{ EFIHandle, EFIMemoryType, SimpleTextOutputInterface };
 use uefi::{ SystemTable, MemoryDescriptor };
-use uefi::{ EFILoadedImageProtocol, EFISimpleFilesystem };
+use uefi::{ EFILoadedImageProtocol, EFISimpleFilesystem, EFIFileHandle };
 use uefi::{ LOADED_IMAGE_GUID, SIMPLE_FILESYSTEM_GUID };
 
 use option_parser::{ OptionParser, Category };
@@ -98,7 +98,8 @@ unsafe impl GlobalAlloc for Allocator {
         // println!("[DEBUG]: Allocate {} bytes", layout.size());
         let mut buffer = core::ptr::null_mut();
         TABLE.unwrap()
-            .boot_services.allocate_pool(4, layout.size(), &mut buffer);
+            .boot_services.allocate_pool(EFIMemoryType::BootServicesData,
+                                         layout.size(), &mut buffer);
 
         buffer
     }
@@ -119,18 +120,8 @@ fn alloc_error_handler(layout: Layout) -> ! {
 
 fn loaded_image<'a>(table: &SystemTable,
                     handle: EFIHandle) -> &'a EFILoadedImageProtocol<'a> {
-
-    let mut loaded_image_ptr = core::ptr::null_mut();
-    let status = unsafe {
-        (table.boot_services.handle_protocol_fn)(
-            handle,
-            &LOADED_IMAGE_GUID,
-            &mut loaded_image_ptr)
-    };
-
-    if status != EFIStatus::Success {
-        panic!("'LoadedImageProtocol' error: {:?}", status);
-    }
+    let loaded_image_ptr =
+        table.boot_services.handle_protocol(handle, &LOADED_IMAGE_GUID);
 
     let loaded_image =
         unsafe { &*(loaded_image_ptr as *const EFILoadedImageProtocol) };
@@ -142,33 +133,34 @@ fn simple_filesystem<'a>(table: &SystemTable,
                          loaded_image: &'a EFILoadedImageProtocol)
     -> &'a EFISimpleFilesystem
 {
-    let mut simple_filesystem_ptr = core::ptr::null_mut();
-    let status = unsafe {
-        (table.boot_services.handle_protocol_fn)(
-            loaded_image.device_handle,
-            &SIMPLE_FILESYSTEM_GUID,
-            &mut simple_filesystem_ptr)
-    };
-
-    if status != EFIStatus::Success {
-        panic!("'SimpleFilesystem' error: {:?}", status);
-    }
+    let simple_filesystem_ptr =
+        table.boot_services.handle_protocol(loaded_image.device_handle,
+                                            &SIMPLE_FILESYSTEM_GUID);
 
     let simple_filesystem =
         unsafe { &*(simple_filesystem_ptr as *const EFISimpleFilesystem) };
-    // TODO(patrik): Check status
 
     simple_filesystem
 }
 
-fn load_file(handle: EFIHandle, filename: &str) -> Option<Vec<u8>> {
+fn get_boot_directory(handle: EFIHandle, dirname: &str)
+    -> &EFIFileHandle
+{
     let table = unsafe { TABLE.unwrap() };
 
     let loaded_image = loaded_image(&table, handle);
     let simple_filesystem = simple_filesystem(&table, &loaded_image);
     let volume = simple_filesystem.open_volume();
 
-    let file_handle = volume.open(filename,
+    let handle = volume.open(dirname, 0x0000000000000001, 0x0000000000000001);
+
+    handle
+}
+
+fn load_file(directory: &EFIFileHandle, filename: &str)
+    -> Option<Vec<u8>>
+{
+    let file_handle = directory.open(filename,
                                   0x0000000000000001, 0x0000000000000001);
 
     let file_content = file_handle.read_to_buffer();
@@ -256,10 +248,12 @@ fn efi_main(image_handle: EFIHandle,
 
     // TODO(patrik): Load the kernel
 
-    let filename = "EFI\\boot\\options.txt";
+    let directory = get_boot_directory(image_handle, "EFI\\boot\\");
+
+    let filename = "options.txt";
     println!("Loading: {}", filename);
 
-    let buffer = load_file(image_handle, filename).unwrap();
+    let buffer = load_file(directory, filename).unwrap();
     let option_str = core::str::from_utf8(&buffer[..]).unwrap();
     println!("Text:\n{}", option_str);
 
@@ -317,15 +311,22 @@ fn efi_main(image_handle: EFIHandle,
     println!("Bootloader Options: {:#?}", bootloader_options);
     println!("Kernel Options: {}", core::str::from_utf8(&buffer[0..index]).unwrap());
 
+    let filename = bootloader_options.kernel_filename;
+    let test_bin = load_file(directory, &filename).unwrap();
+
+    type KernelEntry = extern "sysv64" fn(a: u64, b: u64) -> u64;
+
+    let entry: KernelEntry = unsafe { core::mem::transmute(test_bin.as_ptr()) };
+    let result = (entry)(30, 50);
+    println!("Kernel Result: {}", result);
+
     /*
-    let kernel_options = load_kernel_options();
-    let kernel = load_kernel(kernel_options);
     let memory_map = table.boot_services.get_memory_map();
     exit_boot_services();
     call_kernel_entry(kernel);
     */
 
-    0
+    loop {}
 }
 
 #[panic_handler]
@@ -340,7 +341,6 @@ fn panic(info: &PanicInfo) -> ! {
         println!("Location: {}:{}:{}", 
                  loc.file(), loc.line(), loc.column());
     }
-
 
     println!("--------------------------------------");
 

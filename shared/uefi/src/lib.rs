@@ -359,7 +359,7 @@ pub struct BootServices {
     free_pages_fn: usize,
     pub get_memory_map_fn: unsafe fn(&mut u64, *mut MemoryDescriptor,
                                  &mut u64, &mut u64, &mut u32) -> EFIStatus,
-    allocate_pool_fn: unsafe fn(u32, u64, &mut *mut u8) -> EFIStatus,
+    allocate_pool_fn: unsafe fn(EFIMemoryType, u64, &mut *mut u8) -> EFIStatus,
     free_pool_fn: unsafe fn(*mut u8) -> EFIStatus,
 
     create_event_fn: usize,
@@ -411,13 +411,42 @@ pub struct BootServices {
 }
 
 impl BootServices {
-    pub unsafe fn allocate_pool(&self, memory_type: u32,
-                            size: usize, buffer: &mut *mut u8) -> EFIStatus {
-        (self.allocate_pool_fn)(memory_type, size as u64, buffer)
+    pub fn allocate_pool(&self, memory_type: EFIMemoryType,
+                         size: usize, buffer: &mut *mut u8)
+    {
+        let status = unsafe {
+            (self.allocate_pool_fn)(memory_type, size as u64, buffer)
+        };
+
+        if status != EFIStatus::Success {
+            panic!("Failed to allocate from pool: {:?}", memory_type);
+        }
     }
 
-    pub unsafe fn free_pool(&self, buffer: *mut u8) -> EFIStatus {
-        (self.free_pool_fn)(buffer)
+    pub fn free_pool(&self, buffer: *mut u8) {
+        let status = unsafe {
+            (self.free_pool_fn)(buffer)
+        };
+
+        if status != EFIStatus::Success {
+            panic!("Failed to free pool");
+        }
+    }
+
+    pub fn handle_protocol(&self, handle: EFIHandle, guid: &EFIGuid)
+        -> *mut c_void
+    {
+        let mut ptr = core::ptr::null_mut();
+        let status = unsafe {
+            (self.handle_protocol_fn)(handle, guid, &mut ptr)
+        };
+
+        if status != EFIStatus::Success {
+            // TODO(patrik): Print the guid
+            panic!("Failed to handle protocol");
+        }
+
+        ptr
     }
 }
 

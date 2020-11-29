@@ -29,6 +29,7 @@ image: build
 	mcopy -i $(PART_IMAGE) $(EFI_EXE) ::/EFI/boot/main.efi
 	mcopy -i $(PART_IMAGE) startup.nsh ::
 	mcopy -i $(PART_IMAGE) options.txt ::/EFI/boot/options.txt
+	mcopy -i $(PART_IMAGE) test.bin ::/EFI/boot/test.bin
 
 	dd if=$(PART_IMAGE) of=$(UEFI_IMAGE) bs=512 count=91669 seek=2048 conv=notrunc
 

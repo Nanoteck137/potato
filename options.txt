@@ -1,6 +1,6 @@
 [bootloader]
 load_font=kernel.fnt
-kernel=potato_example.kern
+kernel=test.bin
 
 [kernel]
 wooh="Hello World"
