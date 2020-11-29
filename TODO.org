@@ -1,5 +1,12 @@
 #+TITLE: Potato Bootloader TODO
 
+* Project
+** TODO Write a build system with rust
+*** TODO Integrate with other project
+I want a way to integrate other build systems for this
+so the kernel project can just reference the bootloader build system
+for infomation like bootloader executable location so the kernel
+can bundle the final image
 * EFI Interface
 ** DONE Move the EFI Stuff to a library
 ** TODO Wrap all the function pointers in a function wrapper
