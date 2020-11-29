@@ -317,7 +317,7 @@ bitflags! {
     }
 }
 
-#[derive(Clone, Copy, Debug)]
+#[derive(PartialEq, Clone, Copy, Debug)]
 #[repr(C)]
 #[allow(dead_code)]
 pub enum EFIMemoryType {
@@ -341,7 +341,7 @@ pub enum EFIMemoryType {
 #[repr(C)]
 #[derive(Clone, Copy, Debug)]
 pub struct MemoryDescriptor {
-    pub typ: EFIMemoryType,
+    pub memory_type: EFIMemoryType,
     pad: u32,
     pub physical_start: PhysicalAddress,
     pub virtual_start: VirtualAddress,

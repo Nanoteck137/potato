@@ -198,8 +198,6 @@ fn efi_main(image_handle: EFIHandle,
 
     println!("Welcome to the potato bootloader v0.1");
 
-    let memory_map = table.boot_services.get_memory_map();
-    println!("Entry: {:#?}", memory_map.entries().nth(0).unwrap());
 
     // TODO(patrik): Load the kernel
 
@@ -274,6 +272,22 @@ fn efi_main(image_handle: EFIHandle,
     let entry: KernelEntry = unsafe { core::mem::transmute(test_bin.as_ptr()) };
     let result = (entry)(30, 50);
     println!("Kernel Result: {}", result);
+
+    let memory_map = table.boot_services.get_memory_map();
+    println!("Num memory map entries: {:#?}", memory_map.entries().count());
+
+    let mut memory_size = 0usize;
+    for entry in memory_map.entries() {
+        if entry.memory_type == EFIMemoryType::ConventionalMemory ||
+            entry.memory_type == EFIMemoryType::BootServicesCode ||
+            entry.memory_type == EFIMemoryType::BootServicesData {
+            memory_size += entry.number_of_pages as usize;
+        }
+    }
+
+    println!("Entry #0: {:#?}", memory_map.entries().nth(0).unwrap());
+    println!("Total Pages: {}", memory_size);
+    println!("Total Memory: {} MiB", (memory_size * 4096) / 1024 / 1024);
 
     /*
     let memory_map = table.boot_services.get_memory_map();
