@@ -48,6 +48,9 @@ can bundle the final image
 *** TODO Get the framebuffer
 *** TODO Create an API for the Kernel to use the framebuffer
 *** TODO Respect the pixel format and pack the pixels in the right order
+** TODO Bring up more cores
+*** TODO Add some locks
+*** TODO Kernel needs to know the cores
 ** DONE Get the memory map
 ** TODO Enter the kernel
 *** TODO Pass the Memory map

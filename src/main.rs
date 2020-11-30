@@ -234,7 +234,8 @@ fn efi_main(image_handle: EFIHandle,
                 }
             }
         } else if category == Category::Kernel {
-            buffer[index..index+key.len()].clone_from_slice(&key.as_bytes()[..]);
+            buffer[index..index+key.len()]
+                .clone_from_slice(&key.as_bytes()[..]);
             index += key.len();
 
             buffer[index] = b'=';
@@ -266,7 +267,8 @@ fn efi_main(image_handle: EFIHandle,
     }).unwrap();
 
     println!("Bootloader Options: {:#?}", bootloader_options);
-    println!("Kernel Options: {}", core::str::from_utf8(&buffer[0..index]).unwrap());
+    println!("Kernel Options: {}",
+             core::str::from_utf8(&buffer[0..index]).unwrap());
 
     let filename = bootloader_options.kernel_filename;
     let test_bin = load_file(directory, &filename).unwrap();
@@ -301,7 +303,8 @@ fn efi_main(image_handle: EFIHandle,
             entry.memory_type == EFIMemoryType::BootServicesData
         {
             let start = entry.physical_start.0;
-            let end = (entry.physical_start.0 + entry.number_of_pages * 4096) - 1;
+            let end =
+                (entry.physical_start.0 + entry.number_of_pages * 4096) - 1;
             let size = end - start + 1;
 
             print!("[0x{:016x}-0x{:016x}] ", start, end);
