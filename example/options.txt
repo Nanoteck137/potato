@@ -1,0 +1,7 @@
+[bootloader]
+load_font=kernel.fnt
+kernel=test.bin
+
+[kernel]
+wooh="Hello World"
+lel=123
