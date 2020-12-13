@@ -13,8 +13,6 @@ use crate::memory::{ EFIMemoryMap, EFIMemoryType, MemoryDescriptor };
 
 use core::ffi::c_void;
 
-use alloc::vec::Vec;
-
 /// Declare a EFIHandle type that should be a pointer size
 pub type EFIHandle = usize;
 

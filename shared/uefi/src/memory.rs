@@ -96,6 +96,7 @@ impl<'a> Iterator for EFIMemoryMapIterator<'a> {
 
 /// Represents a memory map
 #[derive(Debug)]
+#[repr(C)]
 pub struct EFIMemoryMap {
     buffer: Vec<u8>,
 

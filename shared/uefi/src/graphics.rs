@@ -37,11 +37,11 @@ pub struct EFIGraphicsPixelInfomation {
 #[repr(C)]
 pub struct EFIGraphicsOutputInfo {
     version: u32,
-    width: u32,
-    height: u32,
+    pub width: u32,
+    pub height: u32,
     pixel_format: EFIGraphicsPixelFormat,
     pixel_infomation: EFIGraphicsPixelInfomation,
-    pixels_per_scanline: u32,
+    pub pixels_per_scanline: u32,
 }
 
 /// The mode the GOP is in, it contains the framebuffer base address
