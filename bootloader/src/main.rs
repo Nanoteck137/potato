@@ -4,7 +4,7 @@
 #![no_main]
 
 extern crate rlibc;
-#[macro_use] extern crate alloc;
+extern crate alloc;
 extern crate uefi;
 extern crate option_parser;
 extern crate boot_common;
@@ -64,9 +64,7 @@ impl<'a> TextWriter<'a> {
             }
         }
 
-        unsafe {
-            self.output.output_string(&arr);
-        }
+        self.output.output_string(&arr);
     }
 }
 
@@ -102,7 +100,7 @@ struct Allocator;
 
 unsafe impl GlobalAlloc for Allocator {
     unsafe fn alloc(&self, layout: Layout) -> *mut u8 {
-        println!("[DEBUG]: Allocate {} bytes", layout.size());
+        //println!("[DEBUG]: Allocate {} bytes", layout.size());
         let mut buffer = core::ptr::null_mut();
         TABLE.unwrap()
             .boot_services.allocate_pool(EFIMemoryType::BootServicesData,
@@ -111,8 +109,8 @@ unsafe impl GlobalAlloc for Allocator {
         buffer
     }
 
-    unsafe fn dealloc(&self, ptr: *mut u8, layout: Layout) {
-        println!("[DEBUG]: Deallocate {} bytes", layout.size());
+    unsafe fn dealloc(&self, ptr: *mut u8, _layout: Layout) {
+        //println!("[DEBUG]: Deallocate {} bytes", layout.size());
         TABLE.unwrap().boot_services.free_pool(ptr);
     }
 }
@@ -194,9 +192,7 @@ impl Default for BootloaderOptions {
 fn efi_main(image_handle: EFIHandle, 
             table: &SystemTable<'static>) -> u64
 {
-    unsafe {
-        table.console_out.clear_screen();
-    }
+    table.console_out.clear_screen();
 
     unsafe {
         WRITER = Some(TextWriter::new(table.console_out));
@@ -204,7 +200,6 @@ fn efi_main(image_handle: EFIHandle,
     }
 
     println!("Welcome to the potato bootloader v0.1");
-
 
     // TODO(patrik): Load the kernel
 
@@ -332,7 +327,7 @@ fn efi_main(image_handle: EFIHandle,
                                       core::mem::size_of::<BootInfo>(),
                                       &mut buffer);
 
-    let mut boot_info = buffer as *mut BootInfo;
+    let boot_info = buffer as *mut BootInfo;
 
     let memory_map = table.boot_services.get_memory_map();
     println!("Num memory map entries: {:#?}", memory_map.entries().count());

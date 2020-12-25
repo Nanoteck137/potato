@@ -3,6 +3,11 @@ ENTRY(kernel_entry)
 SECTIONS {
     . = 1M;
 
+    .boot : 
+    {
+        KEEP(*(.boot))
+    }
+
     .text :
     {
         *(.text .text.*)

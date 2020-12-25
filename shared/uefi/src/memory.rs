@@ -1,8 +1,8 @@
 use crate::{ VirtualAddress, PhysicalAddress };
 use alloc::vec::Vec;
 
-/// Flags for the memory attributes
-/// TODO(patrik): Change the names
+// Flags for the memory attributes
+// TODO(patrik): Change the names
 bitflags! {
     pub struct EFIMemoryAttribute: u64 {
         const NONE          = 0x0000000000000000;
@@ -23,7 +23,7 @@ bitflags! {
     }
 }
 
-/// Memory Types
+// Memory Types
 #[derive(PartialEq, Clone, Copy, Debug)]
 #[repr(C)]
 #[allow(dead_code)]
@@ -45,8 +45,8 @@ pub enum EFIMemoryType {
     PersistentMemory        = 0x0000000e,
 }
 
-/// Memory Descritptor represents a chunk of memory with some infomation
-/// like the type, start address and more
+// Memory Descritptor represents a chunk of memory with some infomation
+// like the type, start address and more
 #[repr(C)]
 #[derive(Clone, Copy, Debug)]
 pub struct MemoryDescriptor {
@@ -58,7 +58,7 @@ pub struct MemoryDescriptor {
     pub attribute: EFIMemoryAttribute,
 }
 
-/// A Iterator for the memory map
+// A Iterator for the memory map
 pub struct EFIMemoryMapIterator<'a> {
     buffer: &'a [u8],
 
@@ -94,7 +94,7 @@ impl<'a> Iterator for EFIMemoryMapIterator<'a> {
     }
 }
 
-/// Represents a memory map
+// Represents a memory map
 #[derive(Debug)]
 #[repr(C)]
 pub struct EFIMemoryMap {

@@ -3,13 +3,59 @@ use std::path::Path;
 use std::error::Error;
 
 // A flag to compile the projects in release mode
-const COMPILE_RELEASE_MODE: bool = true;
+const COMPILE_RELEASE_MODE: bool = false;
 // The path to the bootloader the kernel should be packed with
 const BOOTLOADER_PATH: &str = "../bootloader";
 // The name of the bootloader exectuable
 const BOOTLOADER_EXE_NAME: &str = "potato_loader.exe";
 
 const KERNEL_EXE_NAME: &str = "example";
+
+fn cargo_build<P: AsRef<Path>>(directory: P, target_dir: P)
+    -> Result<(), Box<dyn Error>>
+{
+    let directory =
+        directory.as_ref().to_str().unwrap_or("Failed to convert path");
+    let target_dir =
+        target_dir.as_ref().to_str().unwrap_or("Failed to convert path");
+
+    // Issue the cargo build command for the kernel
+    // TODO(patrik): Fix pls, ugly code
+    let status =
+        if COMPILE_RELEASE_MODE {
+            Command::new("cargo")
+                .current_dir(&directory)
+                .args(&[
+                    "build",
+                    "--release",
+
+                    // Set the target directory to the kernel build directory
+                    "--target-dir",
+                    target_dir
+                ])
+                .status()?
+                .success()
+        } else {
+            Command::new("cargo")
+                .current_dir(&directory)
+                .args(&[
+                    "build",
+
+                    // Set the target directory to the kernel build directory
+                    "--target-dir",
+                    target_dir
+                ])
+                .status()?
+                .success()
+        };
+
+    // Check the status for a success otherwise return a error
+    if !status {
+        return Err("Failed to cargo build".into());
+    }
+
+    Ok(())
+}
 
 fn compile_kernel() -> Result<(), Box<dyn Error>> {
     // The path to the kernel
@@ -27,24 +73,7 @@ fn compile_kernel() -> Result<(), Box<dyn Error>> {
     println!("Kernel Path: {:?}", kernel_path);
     println!("Kernel Build Path: {:?}", kernel_build_path);
 
-    // Issue the cargo build command for the kernel
-    let status =
-        Command::new("cargo")
-            .current_dir(&kernel_path)
-            .args(&[
-                "build",
-                // Pass the --release flag if we want to build the
-                // kernel in release mode
-                if COMPILE_RELEASE_MODE { "--release" } else { "" },
-                // Set the target directory to the kernel build directory
-                "--target-dir", kernel_build_path.to_str().unwrap()])
-            .status()?
-            .success();
-
-    // Check the status for a success otherwise return a error
-    if !status {
-        return Err("Status is false".into());
-    }
+    cargo_build(kernel_path, kernel_build_path)?;
 
     Ok(())
 }
@@ -65,24 +94,7 @@ fn compile_bootloader() -> Result<(), Box<dyn Error>> {
     println!("Bootloader Path: {:?}", bootloader_path);
     println!("Bootloader Build Path: {:?}", bootloader_build_path);
 
-    // Issue the cargo build command for the bootloader
-    let status =
-        Command::new("cargo")
-            .current_dir(&bootloader_path)
-            .args(&[
-                "build",
-                // If we wan't to build in release mode then set the
-                // --release flag to the cargo build command
-                if COMPILE_RELEASE_MODE { "--release" } else { "" },
-                // Set the target directory to the bootloader build directory
-                "--target-dir", bootloader_build_path.to_str().unwrap()])
-            .status()?
-            .success();
-
-    // Check the status for a success otherwise return a error
-    if !status {
-        return Err("Status is false".into());
-    }
+    cargo_build(bootloader_path, bootloader_build_path)?;
 
     // All good, the bootloader should be successfully built
     Ok(())
@@ -354,7 +366,7 @@ fn package() -> Result<(), Box<dyn Error>> {
     mcopy(part_image, bootloader_exe_path.to_str().unwrap(),
           "/EFI/boot/main.efi")?;
 
-    dd_merge(part_image, uefi_image, 512, part_image_count, 2048);
+    dd_merge(part_image, uefi_image, 512, part_image_count, 2048)?;
     Ok(())
 }
 
