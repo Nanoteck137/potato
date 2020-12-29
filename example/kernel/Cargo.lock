@@ -18,14 +18,9 @@ name = "example"
 version = "0.1.0"
 dependencies = [
  "boot_common",
- "lockcell",
  "rlibc",
  "spin",
 ]
-
-[[package]]
-name = "lockcell"
-version = "0.1.0"
 
 [[package]]
 name = "rlibc"

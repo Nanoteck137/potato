@@ -6,7 +6,6 @@
 extern crate rlibc;
 extern crate boot_common;
 extern crate alloc;
-extern crate lockcell;
 extern crate spin;
 
 use boot_common::{ BootInfo, Framebuffer };
@@ -15,21 +14,7 @@ use core::panic::PanicInfo;
 
 use alloc::alloc::{ GlobalAlloc, Layout };
 
-use lockcell::LockCell;
-
 use spin::Mutex;
-
-use core::fmt;
-
-pub struct LockInterrupts;
-
-impl lockcell::InterruptState for LockInterrupts {
-    fn in_interrupt() -> bool { false }
-    fn in_exception() -> bool { false }
-    fn core_id() -> u32 { 0 }
-    fn enter_lock() {}
-    fn exit_lock() {}
-}
 
 const FONT_BYTES: &'static [u8] = include_bytes!("../res/zap-vga16.psf");
 
@@ -127,10 +112,10 @@ impl<'a> Writer<'a> {
 
     fn write_char(&mut self, c: char) {
         match c {
-            /*'\n' => {
+            '\n' => {
                 self.cursor.x = 0;
                 self.cursor.y += 1;
-            }*/
+            }
 
             _ => {
                 let x = self.cursor.x * 8;
@@ -143,7 +128,7 @@ impl<'a> Writer<'a> {
     }
 }
 
-impl<'a> fmt::Write for Writer<'a> {
+impl<'a> core::fmt::Write for Writer<'a> {
     fn write_str(&mut self, s: &str) -> core::fmt::Result {
         for c in s.chars() {
             self.write_char(c);
@@ -169,7 +154,7 @@ macro_rules! println {
 }
 
 #[doc(hidden)]
-pub fn _print(args: fmt::Arguments) {
+pub fn _print(args: core::fmt::Arguments) {
     use core::fmt::Write;
 
     WRITER.lock().as_mut().unwrap().write_fmt(args).unwrap();
@@ -178,22 +163,15 @@ pub fn _print(args: fmt::Arguments) {
 #[no_mangle]
 #[link_section = ".boot"]
 extern fn kernel_entry(boot_info: &'static BootInfo) -> u32 {
-    use core::fmt::Write;
-
     let font = PSFFont::new(FONT_BYTES);
-    let mut writer = Writer::new(font, &boot_info.framebuffer);
+    let writer = Writer::new(font, &boot_info.framebuffer);
 
     {
         *WRITER.lock() = Some(writer);
     }
 
-    // loop{}
-
-    {
-        //WRITER.lock().as_mut().unwrap().write_str("Hello ").unwrap();
-    }
-
-    print!("Hello World from print");
+    println!("Hello World from print");
+    println!("Wooh");
 
     123
 }
