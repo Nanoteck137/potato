@@ -201,8 +201,6 @@ fn efi_main(image_handle: EFIHandle,
 
     println!("Welcome to the potato bootloader v0.1");
 
-    // TODO(patrik): Load the kernel
-
     let directory = get_boot_directory(image_handle, "EFI\\boot\\");
 
     let filename = "options.txt";

@@ -1,4 +1,4 @@
-#![feature(alloc_error_handler, panic_info_message)]
+#![feature(alloc_error_handler, panic_info_message, asm)]
 
 #![no_std]
 #![no_main]
@@ -6,12 +6,30 @@
 extern crate rlibc;
 extern crate boot_common;
 extern crate alloc;
+extern crate lockcell;
+extern crate spin;
 
 use boot_common::{ BootInfo, Framebuffer };
 
 use core::panic::PanicInfo;
 
 use alloc::alloc::{ GlobalAlloc, Layout };
+
+use lockcell::LockCell;
+
+use spin::Mutex;
+
+use core::fmt;
+
+pub struct LockInterrupts;
+
+impl lockcell::InterruptState for LockInterrupts {
+    fn in_interrupt() -> bool { false }
+    fn in_exception() -> bool { false }
+    fn core_id() -> u32 { 0 }
+    fn enter_lock() {}
+    fn exit_lock() {}
+}
 
 const FONT_BYTES: &'static [u8] = include_bytes!("../res/zap-vga16.psf");
 
@@ -71,7 +89,8 @@ impl<'a> PSFFont<'a> {
                             framebuffer.pixels_per_scanline as isize;
                         let pixel_offset =
                             (x + xoff) + row_offset;
-                        *pixel_ptr.offset(pixel_offset) = 0xffffff;
+
+                        core::ptr::write_volatile(pixel_ptr.offset(pixel_offset), 0xffffff);
                     }
                 }
             }
@@ -81,15 +100,105 @@ impl<'a> PSFFont<'a> {
     }
 }
 
+struct Cursor {
+    x: u32,
+    y: u32,
+}
+
+struct Writer<'a> {
+    font: PSFFont<'a>,
+    framebuffer: &'a Framebuffer,
+
+    cursor: Cursor,
+}
+
+impl<'a> Writer<'a> {
+    fn new(font: PSFFont<'a>, framebuffer: &'a Framebuffer) -> Self {
+        Self {
+            font,
+            framebuffer,
+
+            cursor: Cursor {
+                x: 0,
+                y: 0
+            }
+        }
+    }
+
+    fn write_char(&mut self, c: char) {
+        match c {
+            /*'\n' => {
+                self.cursor.x = 0;
+                self.cursor.y += 1;
+            }*/
+
+            _ => {
+                let x = self.cursor.x * 8;
+                let y = self.cursor.y * 16;
+                self.font.put_char(self.framebuffer, c, x, y);
+
+                self.cursor.x += 1;
+            }
+        }
+    }
+}
+
+impl<'a> fmt::Write for Writer<'a> {
+    fn write_str(&mut self, s: &str) -> core::fmt::Result {
+        for c in s.chars() {
+            self.write_char(c);
+        }
+
+        Ok(())
+    }
+}
+
+static WRITER: Mutex<Option<Writer>> = Mutex::new(None);
+
+#[macro_export]
+macro_rules! print {
+    ($($arg:tt)*) => ({
+        $crate::_print(format_args!($($arg)*))
+    });
+}
+
+#[macro_export]
+macro_rules! println {
+    () => ($crate::print!("\n"));
+    ($($arg:tt)*) => ($crate::print!("{}\n", format_args!($($arg)*)));
+}
+
+#[doc(hidden)]
+pub fn _print(args: fmt::Arguments) {
+    use core::fmt::Write;
+
+    WRITER.lock().as_mut().unwrap().write_fmt(args).unwrap();
+}
+
 #[no_mangle]
 #[link_section = ".boot"]
-extern fn kernel_entry(boot_info: &BootInfo) -> u32 {
+extern fn kernel_entry(boot_info: &'static BootInfo) -> u32 {
+    use core::fmt::Write;
 
     let font = PSFFont::new(FONT_BYTES);
-    font.put_char(&boot_info.framebuffer, 'A', 32, 32);
-    font.put_char(&boot_info.framebuffer, 'B', 40, 32);
+    let mut writer = Writer::new(font, &boot_info.framebuffer);
 
-    0
+    write!(&mut writer, "Hello World");
+    writer.write_str("Hello World");
+
+    {
+        *WRITER.lock() = Some(writer);
+    }
+
+    // loop{}
+
+    {
+        //WRITER.lock().as_mut().unwrap().write_str("Hello ").unwrap();
+    }
+
+    //print!("Hello World");
+
+    123
 }
 
 struct Allocator;
@@ -112,5 +221,6 @@ fn alloc_error_handler(layout: Layout) -> ! {
 
 #[panic_handler]
 fn panic(_info: &PanicInfo) -> ! {
+    WRITER.lock().as_mut().unwrap().write_char('P');
     loop {}
 }

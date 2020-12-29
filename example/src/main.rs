@@ -398,7 +398,7 @@ fn run_qemu() -> Result<(), Box<dyn Error>> {
                         ovmf_vars_bin).as_str(),
 
                 "-net",
-                "none"
+                "none",
             ])
             .status()?
             .success();
