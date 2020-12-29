@@ -183,9 +183,6 @@ extern fn kernel_entry(boot_info: &'static BootInfo) -> u32 {
     let font = PSFFont::new(FONT_BYTES);
     let mut writer = Writer::new(font, &boot_info.framebuffer);
 
-    write!(&mut writer, "Hello World");
-    writer.write_str("Hello World");
-
     {
         *WRITER.lock() = Some(writer);
     }
@@ -196,7 +193,7 @@ extern fn kernel_entry(boot_info: &'static BootInfo) -> u32 {
         //WRITER.lock().as_mut().unwrap().write_str("Hello ").unwrap();
     }
 
-    //print!("Hello World");
+    print!("Hello World from print");
 
     123
 }

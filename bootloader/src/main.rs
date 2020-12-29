@@ -4,10 +4,13 @@
 #![no_main]
 
 extern crate rlibc;
+extern crate elf_rs;
 extern crate alloc;
 extern crate uefi;
 extern crate option_parser;
 extern crate boot_common;
+
+use elf_rs::Elf;
 
 use uefi::{ EFIHandle, SimpleTextOutputInterface };
 use uefi::{ EFILoadedImageProtocol, LOADED_IMAGE_GUID };
@@ -15,7 +18,7 @@ use uefi::{ SystemTable };
 
 use uefi::graphics::{ EFIGraphicsOutputProtocol, GRAPHICS_OUTPUT_PROTOCOL_GUID };
 use uefi::fs::{ EFISimpleFilesystem, EFIFileHandle, SIMPLE_FILESYSTEM_GUID };
-use uefi::memory::{ EFIMemoryType };
+use uefi::memory::{ EFIMemoryMap, EFIMemoryType, EFIAllocateType };
 
 use option_parser::{ OptionParser, Category };
 
@@ -188,6 +191,51 @@ impl Default for BootloaderOptions {
     }
 }
 
+fn print_memory_map(memory_map: &EFIMemoryMap) {
+    let mut memory_size = 0usize;
+    for entry in memory_map.entries() {
+        if entry.memory_type == EFIMemoryType::ConventionalMemory ||
+            entry.memory_type == EFIMemoryType::BootServicesCode ||
+            entry.memory_type == EFIMemoryType::BootServicesData {
+            memory_size += entry.number_of_pages as usize;
+        }
+    }
+
+    println!("Entry #0: {:#?}", memory_map.entries().nth(0).unwrap());
+    println!("Total Pages: {}", memory_size);
+    println!("Total Memory: {} MiB", (memory_size * 4096) / 1024 / 1024);
+
+    for entry in memory_map.entries() {
+        if entry.memory_type == EFIMemoryType::ConventionalMemory ||
+            entry.memory_type == EFIMemoryType::LoaderCode ||
+            entry.memory_type == EFIMemoryType::LoaderData ||
+            entry.memory_type == EFIMemoryType::BootServicesCode ||
+            entry.memory_type == EFIMemoryType::BootServicesData
+        {
+            let start = entry.physical_start.0;
+            let end =
+                (entry.physical_start.0 + entry.number_of_pages * 4096) - 1;
+            let size = end - start + 1;
+
+            print!("[0x{:016x}-0x{:016x}] ", start, end);
+
+            if size > 1024 * 1024 {
+                print!("{:>4} MiB", size / 1024 / 1024);
+                // print!(" ({:>10} B)", size);
+            } else if size > 1024 {
+                print!("{:>4} KiB", size / 1024);
+                // print!(" ({:>10} B)", size);
+            } else {
+                print!("{:>4} B", size);
+            }
+
+            print!(" : {:?}", entry.memory_type);
+
+            println!();
+        }
+    }
+}
+
 #[no_mangle]
 fn efi_main(image_handle: EFIHandle, 
             table: &SystemTable<'static>) -> u64
@@ -269,48 +317,6 @@ fn efi_main(image_handle: EFIHandle,
 
 
 
-    /*let mut memory_size = 0usize;
-    for entry in memory_map.entries() {
-        if entry.memory_type == EFIMemoryType::ConventionalMemory ||
-            entry.memory_type == EFIMemoryType::BootServicesCode ||
-            entry.memory_type == EFIMemoryType::BootServicesData {
-            memory_size += entry.number_of_pages as usize;
-        }
-    }
-
-    println!("Entry #0: {:#?}", memory_map.entries().nth(0).unwrap());
-    println!("Total Pages: {}", memory_size);
-    println!("Total Memory: {} MiB", (memory_size * 4096) / 1024 / 1024);
-
-    for entry in memory_map.entries() {
-        if entry.memory_type == EFIMemoryType::ConventionalMemory ||
-            entry.memory_type == EFIMemoryType::LoaderCode ||
-            entry.memory_type == EFIMemoryType::LoaderData ||
-            entry.memory_type == EFIMemoryType::BootServicesCode ||
-            entry.memory_type == EFIMemoryType::BootServicesData
-        {
-            let start = entry.physical_start.0;
-            let end =
-                (entry.physical_start.0 + entry.number_of_pages * 4096) - 1;
-            let size = end - start + 1;
-
-            print!("[0x{:016x}-0x{:016x}] ", start, end);
-
-            if size > 1024 * 1024 {
-                print!("{:>4} MiB", size / 1024 / 1024);
-                // print!(" ({:>10} B)", size);
-            } else if size > 1024 {
-                print!("{:>4} KiB", size / 1024);
-                // print!(" ({:>10} B)", size);
-            } else {
-                print!("{:>4} B", size);
-            }
-
-            print!(" : {:?}", entry.memory_type);
-
-            println!();
-        }
-    }*/
 
     let ptr =
         table.boot_services.locate_protocol(&GRAPHICS_OUTPUT_PROTOCOL_GUID);
@@ -327,8 +333,6 @@ fn efi_main(image_handle: EFIHandle,
 
     let boot_info = buffer as *mut BootInfo;
 
-    let memory_map = table.boot_services.get_memory_map();
-    println!("Num memory map entries: {:#?}", memory_map.entries().count());
 
     unsafe {
         let mut info = &mut *boot_info;
@@ -343,11 +347,60 @@ fn efi_main(image_handle: EFIHandle,
     let filename = bootloader_options.kernel_filename;
     let test_bin = load_file(directory, &filename).unwrap();
 
+    let elf = Elf::from_bytes(&test_bin).unwrap();
+    let entry_point = if let Elf::Elf64(e) = elf {
+        println!("64-bit elf");
+        println!("{:?} header: {:?}", e, e.header());
+
+        println!();
+
+        for p in e.program_header_iter() {
+            println!("PHeader: {:?}", p);
+            let pages = (p.ph.memsz() + 0x1000 - 1) / 0x1000;
+            println!("Pages: {}", pages);
+
+            if pages <= 0 {
+                continue;
+            }
+
+            let mut address = p.ph.paddr();
+            println!("Pre Allocating: {:#x}", address);
+            table.boot_services.allocate_pages(EFIAllocateType::AllocateAddress, EFIMemoryType::LoaderData, pages, &mut address);
+            println!("Allocating: {:#x}", address);
+
+            let start = p.ph.offset() as usize;
+            let end = p.ph.offset().checked_add(p.ph.filesz()).unwrap() as usize;
+            let slice = &test_bin[start..end];
+
+            let data = unsafe {
+                core::slice::from_raw_parts_mut(address as *mut u8,
+                                                (pages * 4096) as usize)
+            };
+
+            data[..slice.len()].copy_from_slice(&slice);
+            println!("Slice {:#x}", slice[slice.len() - 2]);
+            println!("Slice {:#x}", slice[slice.len() - 1]);
+        }
+
+        let entry = e.header().entry_point();
+        println!("Entry: {:#x}", entry);
+
+
+        entry
+    } else {
+        0
+    };
+
+    let memory_map = table.boot_services.get_memory_map();
+    println!("Num memory map entries: {:#?}", memory_map.entries().count());
+    print_memory_map(&memory_map);
+
     type KernelEntry = extern "sysv64" fn(boot_info: &BootInfo) -> u64;
 
     println!("Entring the kernel");
 
-    let entry: KernelEntry = unsafe { core::mem::transmute(test_bin.as_ptr()) };
+    let entry = entry_point as *const u64;
+    let entry: KernelEntry = unsafe { core::mem::transmute(entry) };
     let result = unsafe {
         (entry)(&*boot_info)
     };

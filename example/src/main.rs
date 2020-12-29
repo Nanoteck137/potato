@@ -351,18 +351,18 @@ fn package() -> Result<(), Box<dyn Error>> {
     let kernel_path = kernel_path.join(KERNEL_EXE_NAME);
     let kernel_path = kernel_path.canonicalize()?;
 
-    let kernel_binary_path =
+    /*let kernel_binary_path =
         Path::new("build")
-            .join("test.bin");
+            .join("test.bin");*/
 
     println!("Kernel Path: {:?}", kernel_path);
 
-    objcopy_binary(kernel_path, kernel_binary_path)
-        .expect("Failed to objcopy kernel");
+    //objcopy_binary(kernel_path, kernel_binary_path)
+    //    .expect("Failed to objcopy kernel");
 
     mcopy(part_image, "startup.nsh", "/EFI/boot")?;
     mcopy(part_image, "options.txt", "/EFI/boot")?;
-    mcopy(part_image, "build/test.bin", "/EFI/boot")?;
+    mcopy(part_image, kernel_path.to_str().unwrap(), "/EFI/boot/test.bin")?;
     mcopy(part_image, bootloader_exe_path.to_str().unwrap(),
           "/EFI/boot/main.efi")?;
 
