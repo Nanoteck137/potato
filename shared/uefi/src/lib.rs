@@ -5,7 +5,8 @@ pub mod graphics;
 pub mod fs;
 pub mod memory;
 
-use crate::memory::{ EFIMemoryMap, EFIMemoryType, MemoryDescriptor };
+use crate::memory::{ EFIMemoryMap, EFIMemoryType, EFIAllocateType };
+use crate::memory::MemoryDescriptor;
 
 /// External crates this library uses
 #[macro_use] extern crate bitflags;
@@ -199,7 +200,8 @@ pub struct BootServices {
     raise_tpl_fn: usize,
     restore_tpl_fn: usize,
 
-    allocate_pages_fn: usize,
+    allocate_pages_fn: unsafe fn(EFIAllocateType, EFIMemoryType,
+                                 u64, &mut u64) -> EFIStatus,
     free_pages_fn: usize,
     get_memory_map_fn: unsafe fn(&mut u64, *mut MemoryDescriptor,
                                  &mut u64, &mut u64, &mut u32) -> EFIStatus,
@@ -255,6 +257,18 @@ pub struct BootServices {
 }
 
 impl BootServices {
+    pub fn allocate_pages(&self,
+                          allocate_type: EFIAllocateType,
+                          memory_type: EFIMemoryType,
+                          page_count: u64,
+                          address: &mut u64)
+    {
+        unsafe {
+            (self.allocate_pages_fn)(allocate_type, memory_type,
+                                     page_count, address);
+        }
+    }
+
     /// A Function to allocate from a pool selected by the ´memory_type´
     /// TODO(patrik): Return the pointer insteed
     pub fn allocate_pool(&self, memory_type: EFIMemoryType,

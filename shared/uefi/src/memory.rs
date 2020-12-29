@@ -45,6 +45,15 @@ pub enum EFIMemoryType {
     PersistentMemory        = 0x0000000e,
 }
 
+#[derive(PartialEq, Clone, Copy, Debug)]
+#[repr(C)]
+#[allow(dead_code)]
+pub enum EFIAllocateType {
+    AllocateAnyPages   = 0x00,
+    AllocateMaxAddress = 0x01,
+    AllocateAddress    = 0x03,
+}
+
 // Memory Descritptor represents a chunk of memory with some infomation
 // like the type, start address and more
 #[repr(C)]
