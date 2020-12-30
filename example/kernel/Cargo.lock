@@ -20,6 +20,7 @@ dependencies = [
  "boot_common",
  "rlibc",
  "spin",
+ "uefi",
 ]
 
 [[package]]

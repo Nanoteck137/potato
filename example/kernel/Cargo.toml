@@ -15,4 +15,5 @@ panic = "abort"
 [dependencies]
 rlibc = "1.0.0"
 boot_common = { path = "../../shared/boot_common" }
+uefi = { path = "../../shared/uefi" }
 spin = "0.5.2"

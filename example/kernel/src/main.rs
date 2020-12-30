@@ -7,8 +7,10 @@ extern crate rlibc;
 extern crate boot_common;
 extern crate alloc;
 extern crate spin;
+extern crate uefi;
 
 use boot_common::{ BootInfo, Framebuffer };
+use uefi::memory::{ EFIMemoryMap, EFIMemoryType };
 
 use core::panic::PanicInfo;
 
@@ -160,9 +162,57 @@ pub fn _print(args: core::fmt::Arguments) {
     WRITER.lock().as_mut().unwrap().write_fmt(args).unwrap();
 }
 
+fn print_memory_map(memory_map: &EFIMemoryMap) {
+    let mut memory_size = 0usize;
+    for entry in memory_map.entries() {
+        if entry.memory_type == EFIMemoryType::ConventionalMemory ||
+            entry.memory_type == EFIMemoryType::BootServicesCode ||
+            entry.memory_type == EFIMemoryType::BootServicesData {
+            memory_size += entry.number_of_pages as usize;
+        }
+    }
+
+    println!("Total Pages: {}", memory_size);
+    println!("Total Memory: {} MiB", (memory_size * 4096) / 1024 / 1024);
+
+    for entry in memory_map.entries() {
+        if entry.memory_type == EFIMemoryType::ConventionalMemory ||
+            entry.memory_type == EFIMemoryType::LoaderCode ||
+            entry.memory_type == EFIMemoryType::LoaderData ||
+            entry.memory_type == EFIMemoryType::BootServicesCode ||
+            entry.memory_type == EFIMemoryType::BootServicesData
+        {
+            let start = entry.physical_start.0;
+            let end =
+                (entry.physical_start.0 + entry.number_of_pages * 4096) - 1;
+            let size = end - start + 1;
+
+            print!("[0x{:016x}-0x{:016x}] ", start, end);
+
+            if size > 1024 * 1024 {
+                print!("{:>4} MiB", size / 1024 / 1024);
+                // print!(" ({:>10} B)", size);
+            } else if size > 1024 {
+                print!("{:>4} KiB", size / 1024);
+                // print!(" ({:>10} B)", size);
+            } else {
+                print!("{:>4} B", size);
+            }
+
+            print!(" : {:?}", entry.memory_type);
+
+            println!();
+        }
+    }
+}
+
 #[no_mangle]
 #[link_section = ".boot"]
-extern fn kernel_entry(boot_info: &'static BootInfo) -> u32 {
+extern fn kernel_entry(boot_info: &'static BootInfo) -> ! {
+    unsafe {
+        core::ptr::write_bytes(boot_info.framebuffer.base as *mut u8,
+                               0, boot_info.framebuffer.size as usize);
+    }
     let font = PSFFont::new(FONT_BYTES);
     let writer = Writer::new(font, &boot_info.framebuffer);
 
@@ -171,9 +221,9 @@ extern fn kernel_entry(boot_info: &'static BootInfo) -> u32 {
     }
 
     println!("Hello World from print");
-    println!("Wooh");
+    print_memory_map(&boot_info.memory_map);
 
-    123
+    loop {}
 }
 
 struct Allocator;
@@ -196,6 +246,6 @@ fn alloc_error_handler(layout: Layout) -> ! {
 
 #[panic_handler]
 fn panic(_info: &PanicInfo) -> ! {
-    WRITER.lock().as_mut().unwrap().write_char('P');
+    println!("Panic");
     loop {}
 }

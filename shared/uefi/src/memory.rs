@@ -104,23 +104,23 @@ impl<'a> Iterator for EFIMemoryMapIterator<'a> {
 }
 
 // Represents a memory map
-#[derive(Debug)]
+#[derive(Debug, Clone, Copy)]
 #[repr(C)]
-pub struct EFIMemoryMap {
-    buffer: Vec<u8>,
+pub struct EFIMemoryMap<'a> {
+    buffer: &'a [u8],
 
     map_size: u64,
     entry_size: u64,
     map_key: u64,
 }
 
-impl<'a> EFIMemoryMap {
+impl<'a> EFIMemoryMap<'a> {
     /// Create a memory map
-    pub(crate) fn new(buffer: Vec<u8>, map_size: u64, entry_size: u64, map_key: u64)
+    pub(crate) fn new(buffer: &'a [u8], map_size: u64, entry_size: u64, map_key: u64)
         -> Self
     {
         Self {
-            buffer,
+            buffer: &buffer[..],
             map_size,
             entry_size,
             map_key
@@ -139,5 +139,9 @@ impl<'a> EFIMemoryMap {
             num_entries,
             index: 0
         }
+    }
+
+    pub fn key(&self) -> u64 {
+        self.map_key
     }
 }

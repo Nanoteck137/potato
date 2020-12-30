@@ -230,7 +230,7 @@ pub struct BootServices {
     start_image_fn: usize,
     exit_fn: usize,
     unload_image_fn: usize,
-    exit_boot_services_fn: usize,
+    exit_boot_services_fn: unsafe fn(EFIHandle, u64) -> EFIStatus,
 
     get_next_monotonic_count_fn: usize,
     stall_fn: usize,
@@ -320,6 +320,26 @@ impl BootServices {
         ptr
     }
 
+    /// Exit boot services
+    pub fn exit_boot_services(&self,
+                              image_handle: EFIHandle,
+                              map_key: u64) -> Option<()>
+    {
+        // Call the function
+        let status = unsafe {
+            (self.exit_boot_services_fn)(image_handle, map_key)
+        };
+
+        // Check the status
+        if status == EFIStatus::InvalidParameter {
+            None
+        } else if status == EFIStatus::Success {
+            Some(())
+        } else {
+            panic!("Exit boot services failed: {:?}", status);
+        }
+    }
+
     /// Locate a protocol
     pub fn locate_protocol(&self, protocol: &EFIGuid) -> *mut c_void {
         // Pointer to the protocol
@@ -341,8 +361,7 @@ impl BootServices {
         ptr
     }
 
-    /// Get a memory map
-    pub fn get_memory_map(&self) -> EFIMemoryMap {
+    pub fn get_memory_map_size(&self) -> usize {
         // Create some variables that the memory map call gives us
         let mut map_size = 0;
         let mut map_key = 0;
@@ -363,12 +382,18 @@ impl BootServices {
         // TODO(patrik): Check the status
 
         // Allocate a buffer to hold the memory map
-        let mut buffer = vec![0u8; map_size as usize];
+        // let mut buffer = vec![0u8; map_size as usize];
+
+        map_size as usize
+    }
+
+    /// Get a memory map
+    pub fn get_memory_map<'a>(&self, buffer: *mut u8, buffer_size: usize) -> EFIMemoryMap<'a> {
 
         // Get a pointer to the buffer
-        let ptr = buffer.as_mut_ptr() as *mut MemoryDescriptor;
+        let ptr = buffer as *mut MemoryDescriptor;
 
-        let mut map_size = buffer.len() as u64;
+        let mut map_size = buffer_size as u64;
         let mut map_key = 0;
         let mut entry_size = 0;
         let mut entry_version = 0;
@@ -385,11 +410,11 @@ impl BootServices {
         };
 
         if status != EFIStatus::Success {
-            panic!("Failed to retrive the memory map");
+            panic!("Failed to retrive the memory map: {:?}", status);
         }
 
         // Return a instance of a memory map struct
-        EFIMemoryMap::new(buffer, map_size, entry_size, map_key)
+        EFIMemoryMap::new(unsafe { core::slice::from_raw_parts(buffer, buffer_size) }, map_size, entry_size, map_key)
     }
 }
 

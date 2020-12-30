@@ -16,12 +16,13 @@ pub struct Framebuffer {
     pub height: u32,
     pub pixels_per_scanline: u32,
 
-    pub base: u64
+    pub base: u64,
+    pub size: u64,
 }
 
 #[derive(Debug)]
 #[repr(C)]
-pub struct BootInfo {
+pub struct BootInfo<'a> {
     pub framebuffer: Framebuffer,
-    pub memory_map: EFIMemoryMap
+    pub memory_map: EFIMemoryMap<'a>
 }
