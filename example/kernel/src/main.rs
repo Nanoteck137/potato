@@ -11,14 +11,12 @@ extern crate uefi;
 
 mod graphics;
 
-use boot_common::{ BootInfo, Framebuffer };
+use boot_common::{ BootInfo };
 use uefi::memory::{ EFIMemoryMap, EFIMemoryType };
 
 use core::panic::PanicInfo;
 
 use alloc::alloc::{ GlobalAlloc, Layout };
-
-use spin::Mutex;
 
 fn print_memory_map(memory_map: &EFIMemoryMap) {
     let mut memory_size = 0usize;
@@ -71,7 +69,6 @@ extern fn kernel_entry(boot_info: &'static BootInfo) -> ! {
 
     println!("Welcome to the Example Kernel");
     print_memory_map(&boot_info.memory_map);
-
 
     loop {}
 }

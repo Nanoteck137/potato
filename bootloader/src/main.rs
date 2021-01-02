@@ -278,9 +278,9 @@ fn efi_main(image_handle: EFIHandle,
     println!("Framebuffer Info: {:#?}", gop.mode.info);
 
     let filename = bootloader_options.kernel_filename;
-    let test_bin = load_file(directory, &filename).unwrap();
+    let kernel_binary = load_file(directory, &filename).unwrap();
 
-    let elf = Elf::from_bytes(&test_bin).unwrap();
+    let elf = Elf::from_bytes(&kernel_binary).unwrap();
     let entry_point = if let Elf::Elf64(e) = elf {
         for p in e.program_header_iter() {
             let pages = (p.ph.memsz() + 0x1000 - 1) / 0x1000;
@@ -297,7 +297,7 @@ fn efi_main(image_handle: EFIHandle,
             let start = p.ph.offset() as usize;
             let end =
                 p.ph.offset().checked_add(p.ph.filesz()).unwrap() as usize;
-            let slice = &test_bin[start..end];
+            let slice = &kernel_binary[start..end];
 
             let data = unsafe {
                 core::slice::from_raw_parts_mut(address as *mut u8,
@@ -364,6 +364,7 @@ fn efi_main(image_handle: EFIHandle,
 
     let entry = entry_point as *const u64;
     let entry: KernelEntry = unsafe { core::mem::transmute(entry) };
+
     // Call the kernel's entry point
     unsafe { (entry)(&*boot_info) };
 }

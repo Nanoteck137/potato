@@ -60,7 +60,8 @@ impl<'a> PSFFont<'a> {
                         let pixel_offset =
                             (x + xoff) + row_offset;
 
-                        core::ptr::write_volatile(pixel_ptr.offset(pixel_offset), 0xffffff);
+                        core::ptr::write_volatile(
+                            pixel_ptr.offset(pixel_offset), 0xffffff);
                     }
                 }
             }
